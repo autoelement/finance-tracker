@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ფინანსები — Excel ანალიზი</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Georgian:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#080c0f;--bg2:#0d1318;--bg3:#121920;
+  --border:#1a2430;--border2:#1f2d3d;
+  --text:#e8f0f7;--text2:#7a9ab5;--text3:#3a5570;
+  --green:#00d4a0;--green2:#00ff94;--green-dim:#00d4a015;--green-mid:#00d4a025;
+  --red:#ff4560;--red-dim:#ff456015;
+  --amber:#ffa040;--amber-dim:#ffa04015;
+  --blue:#4090ff;--blue-dim:#4090ff15;
+  --purple:#a060ff;--purple-dim:#a060ff15;
+  --pink:#ff60c0;--cyan:#40e0e0;
+}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans Georgian',sans-serif;min-height:100vh}
+.mono{font-family:'Space Mono',monospace}
+button{font-family:inherit}
+
+/* HEADER */
+header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{font-family:'Space Mono',monospace;font-size:17px;font-weight:700;color:var(--green);letter-spacing:.06em}
+.logo span{color:var(--text3)}
+.h-spacer{flex:1}
+.btn{border:1px solid var(--border2);background:var(--bg3);color:var(--text2);padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{color:var(--text);border-color:var(--green);background:var(--green-dim)}
+.btn-primary{background:var(--green);color:#04120d;border-color:var(--green)}
+.btn-primary:hover{background:var(--green2);color:#04120d}
+.btn-danger:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
+.btn-sm{padding:6px 11px;font-size:12px}
+
+.wrap{max-width:1200px;margin:0 auto;padding:22px 20px 80px}
+
+/* DROPZONE */
+.dropzone{border:2px dashed var(--border2);border-radius:18px;padding:54px 24px;text-align:center;background:var(--bg2);cursor:pointer;transition:all .2s;margin-bottom:22px}
+.dropzone:hover,.dropzone.drag{border-color:var(--green);background:var(--green-dim)}
+.dropzone .dz-ico{font-size:48px;margin-bottom:12px}
+.dropzone h2{font-size:20px;font-weight:600;margin-bottom:8px}
+.dropzone p{color:var(--text2);font-size:14px;line-height:1.6;max-width:480px;margin:0 auto}
+.dropzone .fmt{margin-top:14px;font-size:12px;color:var(--text3)}
+
+.section-title{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:26px 0 14px}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
+.stat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.stat-val{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;line-height:1.1}
+.stat-sub{font-size:12px;color:var(--text2);margin-top:6px}
+.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}
+
+/* CHARTS GRID */
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px}
+.chart-card.full{grid-column:1/-1}
+.chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.chart-title{font-size:13px;font-weight:600;color:var(--text)}
+.chart-body{position:relative;height:260px}
+.chart-body.tall{height:300px}
+
+/* MAPPING MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:500;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:18px;padding:26px;max-width:640px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.modal h2{font-size:19px;font-weight:600;margin-bottom:6px}
+.modal .sub{color:var(--text2);font-size:13px;margin-bottom:22px;line-height:1.5}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:7px}
+.field label .req{color:var(--red)}
+select,input[type=text],input[type=number]{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:10px 12px;border-radius:9px;font-size:14px;font-family:inherit}
+select:focus,input:focus{outline:none;border-color:var(--green)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint{font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4}
+.preview-tbl{max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin:6px 0 20px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+
+/* TABLE */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.table-tools{display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center}
+.table-tools input[type=text]{max-width:260px}
+.table-tools select{max-width:180px}
+.tbl-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:11px 14px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+th:hover{color:var(--text2)}
+td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap}
+tr:hover td{background:var(--bg3)}
+td.amt{font-family:'Space Mono',monospace;font-weight:700;text-align:right}
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.pill.in{background:var(--green-dim);color:var(--green)}
+.pill.out{background:var(--red-dim);color:var(--red)}
+td select{padding:5px 8px;font-size:12px;min-width:130px}
+.empty{text-align:center;padding:40px;color:var(--text3)}
+.tbl-foot{padding:12px 16px;color:var(--text3);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+
+/* TOAST */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:13px 20px;border-radius:11px;font-size:14px;z-index:900;transition:transform .3s;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:var(--green)}
+#toast.err{border-color:var(--red)}
+
+.hidden{display:none!important}
+
+@media(max-width:820px){
+  .stats{grid-template-columns:1fr 1fr}
+  .charts{grid-template-columns:1fr}
+  .chart-card.full{grid-column:auto}
+  .wrap{padding:16px 14px 70px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">₾<span>/</span>FIN</div>
+  <div class="h-spacer"></div>
+  <button class="btn btn-sm" id="btn-import" onclick="triggerImport()">＋ იმპორტი</button>
+  <button class="btn btn-sm btn-danger hidden" id="btn-clear" onclick="clearAll()">🗑 გასუფთავება</button>
+  <input type="file" id="file-input" accept=".xlsx,.xls,.csv" class="hidden">
+</header>
+
+<div class="wrap">
+
+  <!-- EMPTY / DROPZONE -->
+  <div id="dropzone" class="dropzone" onclick="triggerImport()">
+    <div class="dz-ico">📊</div>
+    <h2>ატვირთე Excel ფაილი</h2>
+    <p>გადმოაგდე ან დააჭირე ასატვირთად. სისტემა ავტომატურად დაარისხებს ტრანზაქციებს ხარჯებად და შემოსავლებად, დაითვლის მოგება/ზარალს და დახატავს გრაფიკებს.</p>
+    <div class="fmt">მხარდაჭერილი ფორმატები: .xlsx · .xls · .csv</div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden">
+
+    <div class="stats">
+      <div class="stat-card"><div class="stat-label">შემოსავალი</div><div class="stat-val green" id="k-income">₾0</div><div class="stat-sub" id="k-income-sub">0 ჩანაწერი</div></div>
+      <div class="stat-card"><div class="stat-label">ხარჯი</div><div class="stat-val red" id="k-expense">₾0</div><div class="stat-sub" id="k-expense-sub">0 ჩანაწერი</div></div>
+      <div class="stat-card"><div class="stat-label">მოგება / ზარალი</div><div class="stat-val" id="k-net">₾0</div><div class="stat-sub" id="k-margin">—</div></div>
+      <div class="stat-card"><div class="stat-label">პერიოდი</div><div class="stat-val blue" id="k-period" style="font-size:16px;line-height:1.4">—</div><div class="stat-sub" id="k-count">0 ტრანზაქცია</div></div>
+    </div>
+
+    <div class="section-title">ანალიტიკა</div>
+    <div class="charts">
+      <div class="chart-card full">
+        <div class="chart-head"><div class="chart-title">მოგება/ზარალი დროში (თვეების მიხედვით)</div></div>
+        <div class="chart-body tall"><canvas id="chart-pnl"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div class="chart-title">შემოსავალი vs ხარჯი</div></div>
+        <div class="chart-body"><canvas id="chart-io"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div class="chart-title">ხარჯები კატეგორიების მიხედვით</div></div>
+        <div class="chart-body"><canvas id="chart-cat-exp"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div class="chart-title">შემოსავალი კატეგორიების მიხედვით</div></div>
+        <div class="chart-body"><canvas id="chart-cat-inc"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div class="chart-title">კუმულაციური ბალანსი</div></div>
+        <div class="chart-body"><canvas id="chart-cum"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title">ტრანზაქციები</div>
+    <div class="table-wrap">
+      <div class="table-tools">
+        <input type="text" id="search" placeholder="🔍 ძებნა აღწერით..." oninput="renderTable()">
+        <select id="filter-type" onchange="renderTable()">
+          <option value="">ყველა ტიპი</option>
+          <option value="income">შემოსავალი</option>
+          <option value="expense">ხარჯი</option>
+        </select>
+        <select id="filter-cat" onchange="renderTable()"><option value="">ყველა კატეგორია</option></select>
+        <div class="h-spacer" style="flex:1"></div>
+        <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV ექსპორტი</button>
+      </div>
+      <div class="tbl-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortBy('date')">თარიღი</th>
+              <th onclick="sortBy('desc')">აღწერა</th>
+              <th onclick="sortBy('category')">კატეგორია</th>
+              <th onclick="sortBy('type')">ტიპი</th>
+              <th onclick="sortBy('amount')" style="text-align:right">თანხა</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="tbl-foot">
+        <span id="tbl-info">—</span>
+        <span id="tbl-sum" class="mono"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAPPING MODAL -->
+<div class="overlay" id="map-overlay">
+  <div class="modal">
+    <h2>სვეტების მიბმა</h2>
+    <div class="sub">მიუთითე, ფაილის რომელი სვეტი რას შეესაბამება. სისტემამ თავად შეარჩია სავარაუდო ვარიანტები — შეამოწმე და საჭიროებისამებრ შეასწორე.</div>
+
+    <div class="field">
+      <label>თარიღის სვეტი <span class="req">*</span></label>
+      <select id="col-date"></select>
+    </div>
+    <div class="field">
+      <label>აღწერა / დასახელება <span class="req">*</span></label>
+      <select id="col-desc"></select>
+    </div>
+    <div class="field">
+      <label>თანხის სვეტი <span class="req">*</span></label>
+      <select id="col-amount"></select>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>ტიპის სვეტი (არასავალდებულო)</label>
+        <select id="col-type"></select>
+        <div class="hint">თუ არსებობს სვეტი „შემოსავალი/ხარჯი"-ს აღმნიშვნელი.</div>
+      </div>
+      <div class="field">
+        <label>კატეგორიის სვეტი (არასავალდებულო)</label>
+        <select id="col-cat"></select>
+        <div class="hint">თუ არ მიუთითებ — ავტომატურად დაკატეგორიზდება.</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>შემოსავალი/ხარჯის განსაზღვრა</label>
+      <select id="sign-mode">
+        <option value="auto">ავტომატური (ნიშნის ან ტიპის სვეტის მიხედვით)</option>
+        <option value="sign">თანხის ნიშნით: დადებითი = შემოსავალი, უარყოფითი = ხარჯი</option>
+        <option value="all-expense">ყველა ჩანაწერი ხარჯია</option>
+        <option value="all-income">ყველა ჩანაწერი შემოსავალია</option>
+      </select>
+    </div>
+
+    <div class="section-title" style="margin:20px 0 8px">წინასწარი ხედი</div>
+    <div class="preview-tbl" id="map-preview"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMap()">გაუქმება</button>
+      <button class="btn btn-primary" onclick="applyMapping()">დამუშავება</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+
+/* ============ STATE ============ */
+var STORE_KEY = "fin_tx_v1";
+var tx = [];              // {id,date(Date|null),dateStr,desc,category,type('income'|'expense'),amount(number)}
+var rawRows = [];         // array-of-arrays from imported sheet
+var headers = [];
+var sortKey = "date", sortDir = -1;
+var charts = {};
+
+/* ============ CATEGORY AUTO-RULES (ka + en keywords) ============ */
+var CATEGORIES = ["ხელფასი","გაყიდვები","საკვები","ტრანსპორტი","კომუნალური","ქირა","გართობა","ჯანმრთელობა","შოპინგი","განათლება","გადასახადები","სხვა"];
+var RULES = [
+  ["ხელფასი",   ["ხელფას","ანაზღაურ","salary","wage","payroll"]],
+  ["გაყიდვები", ["გაყიდვ","შემოსავალი","sale","sales","invoice","ინვოის","revenue","შემოსულ"]],
+  ["საკვები",   ["საკვებ","რესტორ","კაფე","market","supermarket","სუპერ","food","grocery","ლანჩ","ვახშ","carrefour","spar","nikora","goodwill"]],
+  ["ტრანსპორტი",["ბენზ","საწვავ","fuel","gas","taxi","ტაქს","bolt","uber","yandex","ავტობუს","მეტრო","transport","პარკინგ","parking"]],
+  ["კომუნალური",["დენ","ელექტრო","წყალ","გაზ","ინტერნეტ","internet","electric","water","gas bill","utility","კომუნალ","magti","silknet"]],
+  ["ქირა",      ["ქირ","rent","არენდ","lease","იჯარ"]],
+  ["გართობა",   ["კინო","cinema","გართობ","ბარ","bar","კლუბ","club","netflix","spotify","game","გემ"]],
+  ["ჯანმრთელობა",["აფთიაქ","pharm","კლინიკ","clinic","ჰოსპ","hospital","ექიმ","doctor","health","მედიცინ","medical"]],
+  ["შოპინგი",   ["ტანსაცმ","clothes","zara","shop","მაღაზ","electronics","ტექნიკ","amazon","aliexpress"]],
+  ["განათლება", ["სწავლ","universit","school","სკოლ","course","კურს","education","training"]],
+  ["გადასახადები",["გადასახად","tax","საკომ","fee","commission","fine","ჯარიმ","პროცენტ","interest"]]
+];
+
+function autoCategory(desc, type){
+  var d = (desc||"").toLowerCase();
+  for(var i=0;i<RULES.length;i++){
+    var kws = RULES[i][1];
+    for(var j=0;j<kws.length;j++){
+      if(d.indexOf(kws[j].toLowerCase())>-1) return RULES[i][0];
+    }
+  }
+  return "სხვა";
+}
+
+/* ============ HELPERS ============ */
+function fmt(n){
+  var neg = n<0; n=Math.abs(n);
+  var s = n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  return (neg?"-₾":"₾")+s;
+}
+function fmtShort(n){
+  var neg=n<0;n=Math.abs(n);var s;
+  if(n>=1e6)s=(n/1e6).toFixed(1)+"M";
+  else if(n>=1e3)s=(n/1e3).toFixed(1)+"K";
+  else s=n.toFixed(0);
+  return (neg?"-₾":"₾")+s;
+}
+function parseAmount(v){
+  if(typeof v==="number")return v;
+  if(v==null)return NaN;
+  var s=(""+v).trim();
+  if(!s)return NaN;
+  var neg=/^\(.*\)$/.test(s)||/-/.test(s);
+  // keep digits, separators
+  s=s.replace(/[^\d.,-]/g,"");
+  // handle both , and . — assume last separator is decimal
+  var lastC=s.lastIndexOf(","),lastD=s.lastIndexOf(".");
+  if(lastC>-1&&lastD>-1){
+    if(lastC>lastD){s=s.replace(/\./g,"").replace(",",".");}
+    else{s=s.replace(/,/g,"");}
+  } else if(lastC>-1){
+    // only commas -> if looks like thousands (groups of 3) strip, else decimal
+    if(/,\d{3}(\D|$)/.test(s) && !/,\d{1,2}$/.test(s)) s=s.replace(/,/g,"");
+    else s=s.replace(",",".");
+  }
+  s=s.replace(/(?!^)-/g,"");
+  var n=parseFloat(s);
+  if(isNaN(n))return NaN;
+  return neg&&n>0?-n:n;
+}
+function toDate(v){
+  if(v instanceof Date && !isNaN(v)) return v;
+  if(typeof v==="number"){ // excel serial
+    var d=new Date(Math.round((v-25569)*86400*1000));
+    if(!isNaN(d))return d;
+  }
+  if(typeof v==="string"){
+    var s=v.trim();
+    var m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
+    if(m){var dd=+m[1],mm=+m[2],yy=+m[3];if(yy<100)yy+=2000;
+      var dt=new Date(yy,mm-1,dd);if(!isNaN(dt))return dt;}
+    var d2=new Date(s);if(!isNaN(d2))return d2;
+  }
+  return null;
+}
+function dateStr(d){
+  if(!d)return "—";
+  var p=function(x){return(x<10?"0":"")+x;};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+}
+function monthKey(d){
+  if(!d)return "უცნობი";
+  var p=function(x){return(x<10?"0":"")+x;};
+  return d.getFullYear()+"-"+p(d.getMonth()+1);
+}
+function toast(msg,type){
+  var t=document.getElementById("toast");
+  t.textContent=msg;t.className="show "+(type||"");
+  clearTimeout(t._t);t._t=setTimeout(function(){t.className="";},3500);
+}
+
+/* ============ IMPORT ============ */
+function triggerImport(){document.getElementById("file-input").click();}
+document.getElementById("file-input").addEventListener("change",function(e){
+  var f=e.target.files[0];if(f)readFile(f);e.target.value="";
+});
+// drag & drop
+var dz=document.getElementById("dropzone");
+["dragenter","dragover"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();dz.classList.add("drag");});});
+["dragleave","drop"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();if(ev==="drop"){var f=e.dataTransfer.files[0];if(f)readFile(f);}dz.classList.remove("drag");});});
+
+function readFile(f){
+  var name=f.name.toLowerCase();
+  if(!/\.(xlsx|xls|csv)$/.test(name)){toast("ფორმატი არ არის მხარდაჭერილი","err");return;}
+  var r=new FileReader();
+  r.onload=function(ev){
+    try{
+      var data=new Uint8Array(ev.target.result);
+      var wb=XLSX.read(data,{type:"array",cellDates:true});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:false});
+      if(!rows.length){toast("ფაილი ცარიელია","err");return;}
+      // find header row = first row with >=2 non-empty cells
+      var hIdx=0;
+      for(var i=0;i<Math.min(rows.length,10);i++){
+        var nonEmpty=rows[i].filter(function(c){return (""+c).trim()!=="";}).length;
+        if(nonEmpty>=2){hIdx=i;break;}
+      }
+      headers=rows[hIdx].map(function(h,i){var s=(""+h).trim();return s||("სვეტი "+(i+1));});
+      rawRows=rows.slice(hIdx+1).filter(function(r){return r.some(function(c){return(""+c).trim()!=="";});});
+      if(!rawRows.length){toast("მონაცემები ვერ მოიძებნა","err");return;}
+      openMap();
+    }catch(err){console.error(err);toast("წაკითხვის შეცდომა: "+err.message,"err");}
+  };
+  r.readAsArrayBuffer(f);
+}
+
+/* ============ COLUMN MAPPING ============ */
+function guessCol(names,keywords){
+  for(var i=0;i<names.length;i++){
+    var n=names[i].toLowerCase();
+    for(var j=0;j<keywords.length;j++) if(n.indexOf(keywords[j])>-1)return i;
+  }
+  return -1;
+}
+function fillSelect(id,allowNone,guessIdx){
+  var sel=document.getElementById(id);sel.innerHTML="";
+  if(allowNone){var o=document.createElement("option");o.value="-1";o.textContent="— არა —";sel.appendChild(o);}
+  headers.forEach(function(h,i){var o=document.createElement("option");o.value=i;o.textContent=h;sel.appendChild(o);});
+  if(guessIdx>-1)sel.value=guessIdx; else if(allowNone)sel.value="-1";
+}
+function openMap(){
+  var dateG=guessCol(headers,["თარიღ","date","დრო","time","გატარებ"]);
+  var descG=guessCol(headers,["აღწერ","დასახელ","desc","name","დანიშნ","narration","details","პროდუქ","operation","ოპერაცი"]);
+  var amtG =guessCol(headers,["თანხ","amount","sum","ღირებ","დებ","credit","debit","total","value"]);
+  var typeG=guessCol(headers,["ტიპ","type","კატ"]);
+  var catG =guessCol(headers,["კატეგორ","category","ჯგუფ","group"]);
+  fillSelect("col-date",false,dateG>-1?dateG:0);
+  fillSelect("col-desc",false,descG>-1?descG:(headers.length>1?1:0));
+  fillSelect("col-amount",false,amtG>-1?amtG:(headers.length>2?2:0));
+  fillSelect("col-type",true,typeG);
+  fillSelect("col-cat",true,catG);
+  ["col-date","col-desc","col-amount","col-type","col-cat","sign-mode"].forEach(function(id){
+    document.getElementById(id).onchange=renderPreview;
+  });
+  renderPreview();
+  document.getElementById("map-overlay").classList.add("open");
+}
+function closeMap(){document.getElementById("map-overlay").classList.remove("open");}
+
+function detectType(row,ci,signMode){
+  var amt=parseAmount(row[ci.amount]);
+  if(signMode==="all-expense")return {type:"expense",amount:Math.abs(amt)};
+  if(signMode==="all-income")return {type:"income",amount:Math.abs(amt)};
+  if(signMode==="sign")return {type:amt<0?"expense":"income",amount:Math.abs(amt)};
+  // auto
+  if(ci.type>-1){
+    var tv=(""+row[ci.type]).toLowerCase();
+    if(/შემოს|income|credit|კრედ|in\b|დადებ|deposit|\+/.test(tv))return {type:"income",amount:Math.abs(amt)};
+    if(/ხარჯ|expense|debit|დებ|out\b|withdraw|payment|გადახდ|-/.test(tv))return {type:"expense",amount:Math.abs(amt)};
+  }
+  return {type:amt<0?"expense":"income",amount:Math.abs(amt)};
+}
+
+function buildRecords(){
+  var ci={
+    date:+document.getElementById("col-date").value,
+    desc:+document.getElementById("col-desc").value,
+    amount:+document.getElementById("col-amount").value,
+    type:+document.getElementById("col-type").value,
+    cat:+document.getElementById("col-cat").value
+  };
+  var signMode=document.getElementById("sign-mode").value;
+  var out=[],skipped=0;
+  rawRows.forEach(function(row){
+    var amtRaw=parseAmount(row[ci.amount]);
+    if(isNaN(amtRaw)){skipped++;return;}
+    var det=detectType(row,ci,signMode);
+    if(!det.amount){skipped++;return;}
+    var d=toDate(row[ci.date]);
+    var desc=(""+row[ci.desc]).trim()||"—";
+    var cat = ci.cat>-1 ? ((""+row[ci.cat]).trim()||autoCategory(desc,det.type)) : autoCategory(desc,det.type);
+    out.push({
+      id:"t"+Math.random().toString(36).slice(2,10),
+      date:d, dateStr:dateStr(d),
+      desc:desc, category:cat, type:det.type, amount:det.amount
+    });
+  });
+  return {records:out,skipped:skipped};
+}
+
+function renderPreview(){
+  var res=buildRecords();
+  var recs=res.records.slice(0,6);
+  var h='<table><thead><tr><th>თარიღი</th><th>აღწერა</th><th>კატეგორია</th><th>ტიპი</th><th style="text-align:right">თანხა</th></tr></thead><tbody>';
+  recs.forEach(function(r){
+    h+='<tr><td>'+r.dateStr+'</td><td>'+esc(r.desc).slice(0,40)+'</td><td>'+esc(r.category)+'</td>'+
+       '<td><span class="pill '+(r.type==="income"?"in":"out")+'">'+(r.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
+       '<td class="amt '+(r.type==="income"?"green":"red")+'">'+fmt(r.amount)+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById("map-preview").innerHTML=h;
+}
+function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+
+function applyMapping(){
+  var res=buildRecords();
+  if(!res.records.length){toast("ვერცერთი ვალიდური ჩანაწერი ვერ მოიძებნა — შეამოწმე თანხის სვეტი","err");return;}
+  tx=res.records;
+  save();
+  closeMap();
+  showDashboard();
+  render();
+  var msg="დამუშავდა "+res.records.length+" ტრანზაქცია";
+  if(res.skipped)msg+=" ("+res.skipped+" გამოტოვდა)";
+  toast(msg,"ok");
+}
+
+/* ============ PERSISTENCE ============ */
+function save(){
+  try{
+    var slim=tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount};});
+    localStorage.setItem(STORE_KEY,JSON.stringify(slim));
+  }catch(e){console.warn("save failed",e);}
+}
+function load(){
+  try{
+    var raw=localStorage.getItem(STORE_KEY);if(!raw)return false;
+    var arr=JSON.parse(raw);if(!Array.isArray(arr)||!arr.length)return false;
+    tx=arr.map(function(t){
+      var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;
+      return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount};
+    });
+    return true;
+  }catch(e){return false;}
+}
+function clearAll(){
+  if(!confirm("ნამდვილად წავშალო ყველა მონაცემი?"))return;
+  tx=[];localStorage.removeItem(STORE_KEY);
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("dropzone").classList.remove("hidden");
+  document.getElementById("btn-clear").classList.add("hidden");
+  Object.keys(charts).forEach(function(k){if(charts[k]){charts[k].destroy();delete charts[k];}});
+  toast("გასუფთავდა","ok");
+}
+function showDashboard(){
+  document.getElementById("dropzone").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  document.getElementById("btn-clear").classList.remove("hidden");
+}
+
+/* ============ RENDER ============ */
+function render(){
+  renderKpis();
+  renderCatFilter();
+  renderTable();
+  renderCharts();
+}
+
+function totals(){
+  var inc=0,exp=0,ci=0,ce=0;
+  tx.forEach(function(t){if(t.type==="income"){inc+=t.amount;ci++;}else{exp+=t.amount;ce++;}});
+  return {inc:inc,exp:exp,net:inc-exp,ci:ci,ce:ce};
+}
+function renderKpis(){
+  var t=totals();
+  document.getElementById("k-income").textContent=fmt(t.inc);
+  document.getElementById("k-expense").textContent=fmt(t.exp);
+  document.getElementById("k-income-sub").textContent=t.ci+" ჩანაწერი";
+  document.getElementById("k-expense-sub").textContent=t.ce+" ჩანაწერი";
+  var net=document.getElementById("k-net");
+  net.textContent=fmt(t.net);
+  net.className="stat-val "+(t.net>=0?"green":"red");
+  var margin=t.inc>0?((t.net/t.inc)*100):0;
+  document.getElementById("k-margin").textContent=(t.net>=0?"მოგება · ":"ზარალი · ")+(t.inc>0?margin.toFixed(1)+"% მარჟა":"—");
+  // period
+  var dates=tx.filter(function(t){return t.date;}).map(function(t){return t.date;}).sort(function(a,b){return a-b;});
+  if(dates.length){
+    document.getElementById("k-period").textContent=dateStr(dates[0])+" — "+dateStr(dates[dates.length-1]);
+  }else document.getElementById("k-period").textContent="თარიღები არ არის";
+  document.getElementById("k-count").textContent=tx.length+" ტრანზაქცია";
+}
+
+function renderCatFilter(){
+  var cats={};tx.forEach(function(t){cats[t.category]=1;});
+  var sel=document.getElementById("filter-cat");
+  var cur=sel.value;
+  sel.innerHTML='<option value="">ყველა კატეგორია</option>';
+  Object.keys(cats).sort().forEach(function(c){
+    var o=document.createElement("option");o.value=c;o.textContent=c;sel.appendChild(o);
+  });
+  sel.value=cur;
+}
+
+function filteredTx(){
+  var q=document.getElementById("search").value.toLowerCase().trim();
+  var ft=document.getElementById("filter-type").value;
+  var fc=document.getElementById("filter-cat").value;
+  var list=tx.filter(function(t){
+    if(ft&&t.type!==ft)return false;
+    if(fc&&t.category!==fc)return false;
+    if(q&&t.desc.toLowerCase().indexOf(q)===-1&&t.category.toLowerCase().indexOf(q)===-1)return false;
+    return true;
+  });
+  list.sort(function(a,b){
+    var av,bv;
+    if(sortKey==="date"){av=a.date?a.date.getTime():0;bv=b.date?b.date.getTime():0;}
+    else if(sortKey==="amount"){av=a.amount;bv=b.amount;}
+    else{av=(a[sortKey]||"").toLowerCase();bv=(b[sortKey]||"").toLowerCase();}
+    if(av<bv)return -1*sortDir;if(av>bv)return 1*sortDir;return 0;
+  });
+  return list;
+}
+function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"||k==="amount")?-1:1;}renderTable();}
+
+function renderTable(){
+  renderCatFilter();
+  var list=filteredTx();
+  var tb=document.getElementById("tbody");
+  if(!list.length){tb.innerHTML='<tr><td colspan="5" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';
+    document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
+  var opts=CATEGORIES.slice();
+  tx.forEach(function(t){if(opts.indexOf(t.category)===-1)opts.push(t.category);});
+  var h="",sum=0;
+  list.forEach(function(t){
+    sum+=t.type==="income"?t.amount:-t.amount;
+    var sel='<select onchange="changeCat(\''+t.id+'\',this.value)">';
+    opts.forEach(function(c){sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
+    sel+='</select>';
+    h+='<tr><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,60)+'</td>'+
+       '<td>'+sel+'</td>'+
+       '<td><span class="pill '+(t.type==="income"?"in":"out")+'">'+(t.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
+       '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount).replace("₾","₾")+'</td></tr>';
+  });
+  tb.innerHTML=h;
+  document.getElementById("tbl-info").textContent=list.length+" / "+tx.length+" ჩანაწერი";
+  document.getElementById("tbl-sum").textContent="ბალანსი: "+fmt(sum);
+}
+function changeCat(id,val){
+  var t=tx.find(function(x){return x.id===id;});
+  if(t){t.category=val;save();renderKpis();renderCharts();renderCatFilter();}
+}
+
+/* ============ CHARTS ============ */
+var C_GRID="#1a2430",C_TEXT="#7a9ab5";
+var PALETTE=["#00d4a0","#4090ff","#a060ff","#ffa040","#ff4560","#40e0e0","#ff60c0","#00ff94","#8090b0","#ffd040","#60a0ff","#ff8060"];
+Chart.defaults.color=C_TEXT;
+Chart.defaults.font.family="'Space Mono',monospace";
+Chart.defaults.font.size=11;
+
+function destroyChart(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
+
+function monthlyData(){
+  var m={};
+  tx.forEach(function(t){
+    var k=monthKey(t.date);
+    if(!m[k])m[k]={inc:0,exp:0};
+    if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;
+  });
+  var keys=Object.keys(m).sort();
+  // push "უცნობი" to end
+  keys=keys.filter(function(k){return k!=="უცნობი";}).concat(keys.indexOf("უცნობი")>-1?["უცნობი"]:[]);
+  return {keys:keys,m:m};
+}
+function catData(type){
+  var c={};tx.forEach(function(t){if(t.type===type)c[t.category]=(c[t.category]||0)+t.amount;});
+  var arr=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];});
+  return {labels:arr.map(function(a){return a[0];}),vals:arr.map(function(a){return a[1];})};
+}
+
+function renderCharts(){
+  var md=monthlyData();
+  // P&L bar
+  destroyChart("pnl");
+  charts.pnl=new Chart(document.getElementById("chart-pnl"),{
+    type:"bar",
+    data:{labels:md.keys,datasets:[
+      {label:"შემოსავალი",data:md.keys.map(function(k){return md.m[k].inc;}),backgroundColor:"#00d4a0cc",borderRadius:4},
+      {label:"ხარჯი",data:md.keys.map(function(k){return md.m[k].exp;}),backgroundColor:"#ff4560cc",borderRadius:4},
+      {label:"ნეტო",type:"line",data:md.keys.map(function(k){return md.m[k].inc-md.m[k].exp;}),borderColor:"#4090ff",backgroundColor:"#4090ff",tension:.3,borderWidth:2,pointRadius:3,fill:false}
+    ]},
+    options:baseOpts(true)
+  });
+  // income vs expense doughnut
+  var t=totals();
+  destroyChart("io");
+  charts.io=new Chart(document.getElementById("chart-io"),{
+    type:"doughnut",
+    data:{labels:["შემოსავალი","ხარჯი"],datasets:[{data:[t.inc,t.exp],backgroundColor:["#00d4a0","#ff4560"],borderColor:"#0d1318",borderWidth:2}]},
+    options:doughnutOpts()
+  });
+  // category expense
+  var ce=catData("expense");
+  destroyChart("catExp");
+  charts.catExp=new Chart(document.getElementById("chart-cat-exp"),{
+    type:"doughnut",
+    data:{labels:ce.labels,datasets:[{data:ce.vals,backgroundColor:PALETTE,borderColor:"#0d1318",borderWidth:2}]},
+    options:doughnutOpts()
+  });
+  // category income
+  var cinc=catData("income");
+  destroyChart("catInc");
+  charts.catInc=new Chart(document.getElementById("chart-cat-inc"),{
+    type:"doughnut",
+    data:{labels:cinc.labels,datasets:[{data:cinc.vals,backgroundColor:PALETTE.slice().reverse(),borderColor:"#0d1318",borderWidth:2}]},
+    options:doughnutOpts()
+  });
+  // cumulative balance
+  var dated=tx.filter(function(t){return t.date;}).sort(function(a,b){return a.date-b.date;});
+  var run=0,labels=[],data=[];
+  dated.forEach(function(t){run+=t.type==="income"?t.amount:-t.amount;labels.push(t.dateStr);data.push(run);});
+  destroyChart("cum");
+  charts.cum=new Chart(document.getElementById("chart-cum"),{
+    type:"line",
+    data:{labels:labels,datasets:[{label:"ბალანსი",data:data,borderColor:"#00d4a0",backgroundColor:"#00d4a022",tension:.25,borderWidth:2,pointRadius:0,fill:true}]},
+    options:baseOpts(false)
+  });
+}
+function baseOpts(stacked){
+  return {
+    responsive:true,maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    plugins:{
+      legend:{labels:{boxWidth:12,padding:12}},
+      tooltip:{callbacks:{label:function(c){return c.dataset.label+": "+fmt(c.parsed.y);}}}
+    },
+    scales:{
+      x:{grid:{color:C_GRID},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+      y:{grid:{color:C_GRID},ticks:{callback:function(v){return fmtShort(v);}}}
+    }
+  };
+}
+function doughnutOpts(){
+  return {
+    responsive:true,maintainAspectRatio:false,cutout:"58%",
+    plugins:{
+      legend:{position:"right",labels:{boxWidth:11,padding:8,font:{size:11}}},
+      tooltip:{callbacks:{label:function(c){
+        var tot=c.dataset.data.reduce(function(a,b){return a+b;},0);
+        var pct=tot?((c.parsed/tot)*100).toFixed(1):0;
+        return c.label+": "+fmt(c.parsed)+" ("+pct+"%)";
+      }}}
+    }
+  };
+}
+
+/* ============ EXPORT ============ */
+function exportCsv(){
+  var list=filteredTx();
+  if(!list.length){toast("ექსპორტისთვის ჩანაწერი არ არის","err");return;}
+  var rows=[["თარიღი","აღწერა","კატეგორია","ტიპი","თანხა"]];
+  list.forEach(function(t){rows.push([t.dateStr,t.desc,t.category,t.type==="income"?"შემოსავალი":"ხარჯი",(t.type==="income"?"":"-")+t.amount]);});
+  var csv="﻿"+rows.map(function(r){return r.map(function(c){var s=""+c;return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",");}).join("\n");
+  var blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="finance-export.csv";a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+
+/* ============ INIT ============ */
+if(load()){showDashboard();render();}
+</script>
+</body>
+</html>
