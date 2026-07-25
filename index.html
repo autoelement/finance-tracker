@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Georgian:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -142,6 +143,18 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 #toast.err{border-color:var(--red)}
 .hidden{display:none!important}
 
+/* AUTH */
+#login{position:fixed;inset:0;z-index:600;display:none;align-items:center;justify-content:center;padding:20px}
+#login.open{display:flex}
+.login-card{background:var(--bg2);border:1px solid var(--border2);border-radius:18px;padding:30px;max-width:380px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.login-card .logo{font-size:22px;margin-bottom:4px}
+.login-card .sub{color:var(--text2);font-size:13px;margin-bottom:22px}
+.login-card .field{margin-bottom:14px}
+#login-msg{font-size:12px;margin:4px 0 12px;min-height:14px}
+#login-msg.err{color:var(--red)}#login-msg.ok{color:var(--green)}
+.nav-user{font-size:12px;color:var(--text3);white-space:nowrap}
+body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,body:not(.authed) #btn-logout,body:not(.authed) #nav-user{display:none!important}
+
 @media(max-width:820px){
   .stats{grid-template-columns:1fr 1fr}
   .charts{grid-template-columns:1fr}
@@ -153,10 +166,24 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 </head>
 <body>
 
+<div id="login">
+  <div class="login-card">
+    <div class="logo">₾<span>/</span>FIN</div>
+    <div class="sub">შედი ან შექმენი ანგარიში, რომ შენი მონაცემები ღრუბელში დაცული იყოს</div>
+    <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="you@example.com" autocomplete="email"></div>
+    <div class="field"><label>პაროლი</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="login-msg"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" id="login-btn" onclick="doLogin()">შესვლა</button>
+    <button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="doSignup()">ახალი ანგარიშის შექმნა</button>
+  </div>
+</div>
+
 <header>
   <div class="logo">₾<span>/</span>FIN</div>
   <div class="h-spacer"></div>
+  <span class="nav-user" id="nav-user"></span>
   <button class="btn btn-sm" id="btn-import" onclick="triggerImport()">＋ იმპორტი</button>
+  <button class="btn btn-sm btn-danger" id="btn-logout" onclick="doLogout()">გასვლა</button>
   <input type="file" id="file-input" accept=".xlsx,.xls,.csv" class="hidden">
 </header>
 
@@ -301,6 +328,12 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 
 <script>
 "use strict";
+
+/* ============ SUPABASE ============ */
+var SB_URL="https://dvxrqwiktwuokeerrjlf.supabase.co";
+var SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2eHJxd2lrdHd1b2tlZXJyamxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5ODM4NTMsImV4cCI6MjEwMDU1OTg1M30.YqtlovW0V6Sc_zfQDdcvBT4isvgRka8zwSuQkxNn3r8";
+var sb=window.supabase.createClient(SB_URL,SB_KEY);
+var currentUser=null;
 
 /* ============ STATE ============ */
 var K_TX="fin_tx_v3", K_CATS="fin_cats_v1", K_IMP="fin_imports_v1";
@@ -534,24 +567,52 @@ function applyMapping(){
   var msg="დაემატა "+r1.added+" ტრანზაქცია";if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი)";toast(msg,"ok");
 }
 
-/* ============ PERSISTENCE ============ */
+/* ============ PERSISTENCE (Supabase cloud + local cache) ============ */
+function slimTx(){return tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};});}
+function cacheKey(){return "fin_cache_"+(currentUser?currentUser.id:"anon");}
+var _saveTimer=null, _saving=false, _pendingSave=false;
 function saveAll(){
-  try{
-    localStorage.setItem(K_TX,JSON.stringify(tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};})));
-    localStorage.setItem(K_CATS,JSON.stringify(CATS));
-    localStorage.setItem(K_IMP,JSON.stringify(imports));
-  }catch(e){console.warn(e);toast("შენახვა ვერ მოხერხდა — მონაცემები ძალიან დიდია","err");}
+  try{localStorage.setItem(cacheKey(),JSON.stringify({tx:slimTx(),cats:CATS,imports:imports}));}catch(e){}
+  if(!currentUser)return;
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(pushRemote,700);
 }
-function loadAll(){
-  try{var c=JSON.parse(localStorage.getItem(K_CATS)||"null");CATS=(Array.isArray(c)&&c.length)?c:defaultCats();}catch(e){CATS=defaultCats();}
-  CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!c.type)c.type="any";});
-  try{var im=JSON.parse(localStorage.getItem(K_IMP)||"[]");imports=Array.isArray(im)?im:[];}catch(e){imports=[];}
-  try{
-    var arr=JSON.parse(localStorage.getItem(K_TX)||"null");
-    if(!Array.isArray(arr)||!arr.length){tx=[];return false;}
-    tx=arr.map(function(t){var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText||t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",importId:t.importId,manual:!!t.manual,_key:t._key};});
-    return true;
-  }catch(e){tx=[];return false;}
+function pushRemote(){
+  if(!currentUser)return;
+  if(_saving){_pendingSave=true;return;}
+  _saving=true;
+  sb.from("finance_state").upsert({user_id:currentUser.id,tx:slimTx(),cats:CATS,imports:imports,updated_at:new Date().toISOString()},{onConflict:"user_id"}).then(function(res){
+    _saving=false;
+    if(res.error){console.warn(res.error);toast("ღრუბელში შენახვა ვერ მოხერხდა: "+res.error.message,"err");}
+    if(_pendingSave){_pendingSave=false;pushRemote();}
+  });
+}
+function normalizeCats(){CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!c.type)c.type="any";});}
+function hydrateTx(arr){return (arr||[]).map(function(t){var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText||t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",importId:t.importId,manual:!!t.manual,_key:t._key};});}
+function applyState(st){
+  CATS=(st&&Array.isArray(st.cats)&&st.cats.length)?st.cats:defaultCats();
+  imports=(st&&Array.isArray(st.imports))?st.imports:[];
+  tx=hydrateTx(st&&st.tx);
+  normalizeCats();
+}
+function loadFromCache(){try{return JSON.parse(localStorage.getItem(cacheKey())||"null");}catch(e){return null;}}
+function loadRemote(done){
+  sb.from("finance_state").select("tx,cats,imports").eq("user_id",currentUser.id).maybeSingle().then(function(res){
+    if(res.error){
+      console.warn(res.error);
+      var cache=loadFromCache();
+      if(cache){applyState(cache);toast("ღრუბელთან კავშირი ვერ მოხერხდა — ჩაიტვირთა ლოკალური ასლი","err");}
+      else{applyState(null);
+        if((res.error.message||"").indexOf("finance_state")>-1||res.error.code==="42P01"||res.error.code==="PGRST205")
+          toast("ბაზაში ცხრილი ვერ მოიძებნა — გაუშვი მოცემული SQL Supabase-ში","err");
+        else toast("ჩატვირთვის შეცდომა: "+res.error.message,"err");
+      }
+      done();return;
+    }
+    if(!res.data){applyState(null);pushRemote();} // first login → seed defaults
+    else applyState(res.data);
+    done();
+  });
 }
 function showData(){
   document.getElementById("tabs").style.display="";
@@ -802,11 +863,52 @@ function exportCsv(){
   setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
 }
 
+/* ============ AUTH ============ */
+function setAuthed(on){document.body.classList.toggle("authed",on);document.getElementById("login").classList.toggle("open",!on);}
+function loginMsg(m,type){var e=document.getElementById("login-msg");e.textContent=m||"";e.className=type||"";}
+function afterLogin(user){
+  currentUser=user;
+  document.getElementById("nav-user").textContent=user.email||"";
+  setAuthed(true);
+  loginMsg("");
+  loadRemote(function(){showData();showTab("dashboard");});
+}
+function doLogin(){
+  var email=document.getElementById("login-email").value.trim(),pass=document.getElementById("login-pass").value;
+  if(!email||!pass){loginMsg("შეავსე email და პაროლი","err");return;}
+  loginMsg("მიმდინარეობს...","");
+  sb.auth.signInWithPassword({email:email,password:pass}).then(function(res){
+    if(res.error){loginMsg("შეცდომა: "+res.error.message,"err");return;}
+    afterLogin(res.data.user);
+  });
+}
+function doSignup(){
+  var email=document.getElementById("login-email").value.trim(),pass=document.getElementById("login-pass").value;
+  if(!email||!pass){loginMsg("შეავსე email და პაროლი","err");return;}
+  if(pass.length<6){loginMsg("პაროლი მინიმუმ 6 სიმბოლო","err");return;}
+  loginMsg("იქმნება ანგარიში...","");
+  sb.auth.signUp({email:email,password:pass}).then(function(res){
+    if(res.error){loginMsg("შეცდომა: "+res.error.message,"err");return;}
+    if(res.data.session&&res.data.user){afterLogin(res.data.user);}
+    else{loginMsg("ანგარიში შეიქმნა. დაადასტურე email და შემდეგ შედი.","ok");}
+  });
+}
+function doLogout(){
+  sb.auth.signOut().then(function(){
+    currentUser=null;tx=[];imports=[];CATS=defaultCats();
+    Object.keys(charts).forEach(function(k){if(charts[k]){charts[k].destroy();delete charts[k];}});
+    setAuthed(false);
+    document.getElementById("login-pass").value="";
+  });
+}
+
 /* ============ INIT ============ */
 (function init(){
-  loadAll();
-  showData();
-  showTab("dashboard");
+  setAuthed(false);
+  sb.auth.getSession().then(function(res){
+    var s=res.data&&res.data.session;
+    if(s&&s.user)afterLogin(s.user);
+  });
 })();
 </script>
 </body>
