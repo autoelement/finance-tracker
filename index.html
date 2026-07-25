@@ -539,9 +539,9 @@ var dz=document.getElementById("dropzone");
 
 function addRecords(records){
   var seen={};tx.forEach(function(t){if(t._key)seen[t._key]=1;});
-  var added=0,dupes=0;
-  records.forEach(function(r){if(r._key&&seen[r._key]){dupes++;return;}if(r._key)seen[r._key]=1;tx.push(r);added++;});
-  return {added:added,dupes:dupes};
+  var added=[],dupes=0;
+  records.forEach(function(r){if(r._key&&seen[r._key]){dupes++;return;}if(r._key)seen[r._key]=1;tx.push(r);added.push(r);});
+  return {added:added.length,dupes:dupes,rows:added};
 }
 function readFile(f){
   var name=f.name.toLowerCase();
@@ -587,17 +587,16 @@ function readFile(f){
   r.readAsArrayBuffer(f);
 }
 function finishImport(records,skipped,importId,bankId,fname){
-  progMsg("ინახება...");setProgress(94);
   var r1=addRecords(records);
   var bankName=BANK_PROFILES[bankId]?BANK_PROFILES[bankId].name:"სხვა";
+  if(!r1.added&&!r1.dupes){hideProgress();toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
   if(r1.added>0)imports.push({id:importId,bank:bankName,file:fname,ts:Date.now(),count:r1.added});
-  saveAll();
-  setTimeout(function(){
-    hideProgress();
-    if(!r1.added&&!r1.dupes){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
-    showData();showTab("dashboard");
+  progMsg("ღრუბელში შენახვა...");setProgress(0);
+  upsertRows(r1.rows.map(rowFor),true,function(p){setProgress(p*100);},function(err){
+    saveAll();hideProgress();showData();showTab("dashboard");
+    if(err){toast("ნაწილი შენახვისას შეცდომა: "+err.message,"err");return;}
     var m=bankName+": დაემატა "+r1.added.toLocaleString()+" ტრანზაქცია";if(r1.dupes)m+=" ("+r1.dupes.toLocaleString()+" დუბლიკატი)";toast(m,"ok");
-  },30);
+  });
 }
 
 /* ---- generic mapping ---- */
@@ -647,57 +646,76 @@ function applyMapping(){
   if(!res.records.length){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
   var r1=addRecords(res.records);
   if(r1.added>0)imports.push({id:window._pendingImportId,bank:"სხვა",file:window._pendingFile||"—",ts:Date.now(),count:r1.added});
-  saveAll();closeMap();showData();showTab("dashboard");
-  var msg="დაემატა "+r1.added+" ტრანზაქცია";if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი)";toast(msg,"ok");
-}
-
-/* ============ PERSISTENCE (Supabase cloud + local cache) ============ */
-function slimTx(){return tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};});}
-function cacheKey(){return "fin_cache_"+(currentUser?currentUser.id:"anon");}
-var _saveTimer=null, _saving=false, _pendingSave=false;
-function saveAll(){
-  try{localStorage.setItem(cacheKey(),JSON.stringify({tx:slimTx(),cats:CATS,imports:imports}));}catch(e){}
-  if(!currentUser)return;
-  clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(pushRemote,700);
-}
-var CLOUD_MAX=40000; // single-document cloud storage limit (rows)
-function pushRemote(){
-  if(!currentUser)return;
-  if(tx.length>CLOUD_MAX){ if(!window._bigWarned){window._bigWarned=true;toast("⚠️ "+tx.length.toLocaleString()+" ჩანაწერი მეტისმეტია ღრუბლის ერთ დოკუმენტში — ინახება მხოლოდ ამ ბრაუზერში. დიდი მოცულობისთვის საჭიროა per-row ბაზა.","err");} return; }
-  if(_saving){_pendingSave=true;return;}
-  _saving=true;
-  sb.from("finance_state").upsert({user_id:currentUser.id,tx:slimTx(),cats:CATS,imports:imports,updated_at:new Date().toISOString()},{onConflict:"user_id"}).then(function(res){
-    _saving=false;
-    if(res.error){console.warn(res.error);toast("ღრუბელში შენახვა ვერ მოხერხდა: "+res.error.message,"err");}
-    if(_pendingSave){_pendingSave=false;pushRemote();}
+  closeMap();showProgress("ღრუბელში შენახვა...",0);
+  upsertRows(r1.rows.map(rowFor),true,function(p){setProgress(p*100);},function(err){
+    saveAll();hideProgress();showData();showTab("dashboard");
+    if(err){toast("შენახვისას შეცდომა: "+err.message,"err");return;}
+    var msg="დაემატა "+r1.added.toLocaleString()+" ტრანზაქცია";if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი)";toast(msg,"ok");
   });
 }
+
+/* ============ PERSISTENCE (Supabase per-row transactions) ============ */
 function normalizeCats(){CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!c.type)c.type="any";});}
-function hydrateTx(arr){return (arr||[]).map(function(t){var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText||t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",importId:t.importId,manual:!!t.manual,_key:t._key};});}
-function applyState(st){
-  CATS=(st&&Array.isArray(st.cats)&&st.cats.length)?st.cats:defaultCats();
-  imports=(st&&Array.isArray(st.imports))?st.imports:[];
-  tx=hydrateTx(st&&st.tx);
-  normalizeCats();rulesChanged();
+function slim(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};}
+function rehydrateOne(d){var dt=d.dateStr&&d.dateStr!=="—"?toDate(d.dateStr):null;return {id:d.id,date:dt,dateStr:d.dateStr,desc:d.desc,matchText:d.matchText||d.desc,category:d.category,type:d.type,amount:d.amount,bank:d.bank||"სხვა",importId:d.importId,manual:!!d.manual,_key:d._key};}
+function rowFor(t){return {id:t.id,user_id:currentUser.id,import_id:t.importId,dedup_key:t._key,data:slim(t)};}
+
+/* meta (categories + import log) lives in finance_state as small jsonb */
+var _metaTimer=null;
+function saveAll(){ // saves meta only; transaction rows are persisted explicitly
+  if(!currentUser)return;
+  clearTimeout(_metaTimer);
+  _metaTimer=setTimeout(function(){
+    sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[],updated_at:new Date().toISOString()},{onConflict:"user_id"}).then(function(res){if(res.error)console.warn("meta save",res.error);});
+  },500);
 }
-function loadFromCache(){try{return JSON.parse(localStorage.getItem(cacheKey())||"null");}catch(e){return null;}}
+/* batch upsert transaction rows in chunks of 1000 */
+function upsertRows(rows, ignoreDup, onProg, done){
+  if(!rows.length){if(done)done(null);return;}
+  var CH=1000,i=0,err=null;
+  function next(){
+    if(i>=rows.length){if(done)done(err);return;}
+    var slice=rows.slice(i,i+CH);
+    sb.from("transactions").upsert(slice,{onConflict:"user_id,dedup_key",ignoreDuplicates:!!ignoreDup}).then(function(res){
+      if(res.error){err=res.error;console.warn("upsert",res.error);}
+      i+=CH;if(onProg)onProg(Math.min(i,rows.length)/rows.length);
+      setTimeout(next,0);
+    });
+  }
+  next();
+}
+/* load all transaction rows for the user (paginated) */
+function loadAllRows(onProg, done){
+  tx=[];var page=0,PAGE=1000;
+  function next(){
+    sb.from("transactions").select("data").eq("user_id",currentUser.id).range(page*PAGE,page*PAGE+PAGE-1).then(function(res){
+      if(res.error){if(done)done(res.error);return;}
+      var d=res.data||[];
+      for(var i=0;i<d.length;i++)tx.push(rehydrateOne(d[i].data));
+      if(onProg)onProg(tx.length);
+      if(d.length<PAGE){if(done)done(null);}else{page++;setTimeout(next,0);}
+    });
+  }
+  next();
+}
 function loadRemote(done){
-  sb.from("finance_state").select("tx,cats,imports").eq("user_id",currentUser.id).maybeSingle().then(function(res){
-    if(res.error){
-      console.warn(res.error);
-      var cache=loadFromCache();
-      if(cache){applyState(cache);toast("ღრუბელთან კავშირი ვერ მოხერხდა — ჩაიტვირთა ლოკალური ასლი","err");}
-      else{applyState(null);
-        if((res.error.message||"").indexOf("finance_state")>-1||res.error.code==="42P01"||res.error.code==="PGRST205")
-          toast("ბაზაში ცხრილი ვერ მოიძებნა — გაუშვი მოცემული SQL Supabase-ში","err");
-        else toast("ჩატვირთვის შეცდომა: "+res.error.message,"err");
+  showProgress("ანგარიშის ჩატვირთვა...",null);
+  sb.from("finance_state").select("cats,imports").eq("user_id",currentUser.id).maybeSingle().then(function(res){
+    var st=res.error?null:res.data;
+    CATS=(st&&Array.isArray(st.cats)&&st.cats.length)?st.cats:defaultCats();
+    imports=(st&&Array.isArray(st.imports))?st.imports:[];
+    normalizeCats();rulesChanged();
+    if(!st&&!res.error)sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[]},{onConflict:"user_id"});
+    progMsg("ტრანზაქციები იტვირთება...");
+    loadAllRows(function(n){progMsg("ტრანზაქციები იტვირთება... "+n.toLocaleString());},function(err){
+      hideProgress();
+      if(err){
+        if((err.message||"").indexOf("transaction")>-1||err.code==="42P01"||err.code==="PGRST205")
+          toast("ცხრილი 'transactions' ვერ მოიძებნა — გაუშვი ახალი SQL Supabase-ში","err");
+        else toast("ჩატვირთვის შეცდომა: "+err.message,"err");
       }
-      done();return;
-    }
-    if(!res.data){applyState(null);pushRemote();} // first login → seed defaults
-    else applyState(res.data);
-    done();
+      done();
+    });
   });
 }
 function showData(){
@@ -803,7 +821,7 @@ function renderTable(){
   document.getElementById("tbl-info").textContent=info;
   document.getElementById("tbl-sum").textContent="ბალანსი: "+fmt(sum);
 }
-function changeCat(id,val){var t=tx.find(function(x){return x.id===id;});if(t){t.category=val;t.manual=true;saveAll();renderKpis();renderCharts();}}
+function changeCat(id,val){var t=tx.find(function(x){return x.id===id;});if(t){t.category=val;t.manual=true;renderKpis();renderCharts();upsertRows([rowFor(t)],false,null,function(err){if(err)toast("შენახვა ვერ მოხერხდა","err");});}}
 
 /* ============ MONTHLY ============ */
 function renderMonthly(){
@@ -859,8 +877,10 @@ function addCategory(){
 function delCategory(i){
   var c=CATS[i];if(!c)return;
   if(!confirm('წავშალო კატეგორია „'+c.name+'"? ამ კატეგორიის ტრანზაქციები გადავა „'+DEFAULT_CAT+'"-ში.'))return;
-  tx.forEach(function(t){if(t.category===c.name){t.category=DEFAULT_CAT;}});
-  CATS.splice(i,1);rulesChanged();saveAll();renderCats();render();toast("წაიშალა","ok");
+  var moved=[];tx.forEach(function(t){if(t.category===c.name){t.category=DEFAULT_CAT;moved.push(t);}});
+  CATS.splice(i,1);rulesChanged();saveAll();renderCats();render();
+  if(moved.length)upsertRows(moved.map(rowFor),false,null,null);
+  toast("წაიშალა","ok");
 }
 function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;rulesChanged();saveAll();renderCats();}}
 function toggleInclude(i,v){if(CATS[i]){CATS[i].include=v;saveAll();renderCats();if(tx.length)render();}}
@@ -868,11 +888,18 @@ function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])retur
 function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);rulesChanged();saveAll();renderCats();}}
 function recategorize(){
   compileRules();
-  var n=0,total=tx.length,changed=0;
+  var total=tx.length,changed=[];
   showProgress("ხელახლა კატეგორიზაცია...",0);
-  runChunked(total,function(k){var t=tx[k];if(t.manual)return;var nc=categorizeFast(norm(t.matchText||t.desc),t.type);if(nc!==t.category){t.category=nc;changed++;}},
-    function(p){setProgress(p*100);},
-    function(){saveAll();hideProgress();render();toast("ხელახლა დაკატეგორდა "+changed.toLocaleString()+" ტრანზაქცია (ხელით შეცვლილები ხელუხლებელია)","ok");});
+  runChunked(total,function(k){var t=tx[k];if(t.manual)return;var nc=categorizeFast(norm(t.matchText||t.desc),t.type);if(nc!==t.category){t.category=nc;changed.push(t);}},
+    function(p){setProgress(p*50);},
+    function(){
+      progMsg("ცვლილებების შენახვა... ("+changed.length.toLocaleString()+")");
+      upsertRows(changed.map(rowFor),false,function(p){setProgress(50+p*50);},function(err){
+        hideProgress();render();
+        if(err)toast("შენახვისას შეცდომა: "+err.message,"err");
+        else toast("ხელახლა დაკატეგორდა "+changed.length.toLocaleString()+" ტრანზაქცია (ხელით შეცვლილები ხელუხლებელია)","ok");
+      });
+    });
 }
 
 /* ============ HISTORY ============ */
@@ -894,6 +921,7 @@ function delImport(id){
   tx=tx.filter(function(t){return t.importId!==id;});
   imports=imports.filter(function(x){return x.id!==id;});
   saveAll();showData();showTab("history");
+  sb.from("transactions").delete().eq("user_id",currentUser.id).eq("import_id",id).then(function(res){if(res.error)toast("ბაზიდან წაშლა ვერ მოხერხდა","err");});
   toast("იმპორტი წაიშალა","ok");
 }
 function replaceImport(id){
@@ -902,8 +930,11 @@ function replaceImport(id){
   tx=tx.filter(function(t){return t.importId!==id;});
   imports=imports.filter(function(x){return x.id!==id;});
   saveAll();
-  pendingBank = im.bank==="BOG"?"bog":(im.bank==="TBC"?"tbc":"other");
-  document.getElementById("file-input").click();
+  sb.from("transactions").delete().eq("user_id",currentUser.id).eq("import_id",id).then(function(res){
+    if(res.error){toast("ძველის წაშლა ვერ მოხერხდა","err");return;}
+    pendingBank = im.bank==="BOG"?"bog":(im.bank==="TBC"?"tbc":"other");
+    document.getElementById("file-input").click();
+  });
 }
 
 /* ============ CHARTS ============ */
