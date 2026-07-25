@@ -173,6 +173,15 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 .nav-user{font-size:12px;color:var(--text3);white-space:nowrap}
 body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,body:not(.authed) #btn-logout,body:not(.authed) #nav-user{display:none!important}
 
+/* PROGRESS */
+#progress{position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(8,12,15,.82);backdrop-filter:blur(4px)}
+#progress.open{display:flex}
+.prog-card{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:26px 28px;width:360px;max-width:90vw;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.prog-msg{font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text)}
+.prog-bar{height:8px;background:var(--bg3);border-radius:6px;overflow:hidden}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--blue));width:0%;transition:width .15s ease}
+.prog-pct{font-size:12px;color:var(--text3);margin-top:9px;font-family:'Space Mono',monospace}
+
 @media(max-width:820px){
   .stats{grid-template-columns:1fr 1fr}
   .charts{grid-template-columns:1fr}
@@ -354,6 +363,8 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
   </div>
 </div>
 
+<div id="progress"><div class="prog-card"><div class="prog-msg" id="prog-msg">მუშავდება...</div><div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div><div class="prog-pct" id="prog-pct"></div></div></div>
+
 <div id="toast"></div>
 
 <script>
@@ -402,17 +413,15 @@ function defaultCats(){
 
 /* ============ CATEGORIZATION ENGINE ============ */
 function norm(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
-function categorize(text, type){
-  var t=norm(text);
-  for(var i=0;i<CATS.length;i++){
-    var c=CATS[i];
-    if(c.type!=="any" && c.type!==type) continue;
-    for(var j=0;j<c.keywords.length;j++){
-      var kw=norm(c.keywords[j]); if(kw && t.indexOf(kw)>-1) return c.name;
-    }
-  }
+var _RULES=null; // compiled rules cache
+function compileRules(){_RULES=CATS.map(function(c){return {name:c.name,type:c.type,kws:c.keywords.map(function(k){return norm(k);}).filter(Boolean)};});}
+function rulesChanged(){_RULES=null;}
+function categorizeFast(low,type){ // low = already normalized text
+  var R=_RULES;
+  for(var i=0;i<R.length;i++){var c=R[i];if(c.type!=="any"&&c.type!==type)continue;var ks=c.kws;for(var j=0;j<ks.length;j++){if(low.indexOf(ks[j])>-1)return c.name;}}
   return DEFAULT_CAT;
 }
+function categorize(text, type){ if(!_RULES)compileRules(); return categorizeFast(norm(text),type); }
 function catNames(){return CATS.map(function(c){return c.name;});}
 function catType(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)return CATS[i].type;return "any";}
 
@@ -435,7 +444,7 @@ function findColByLabel(header,aliases){
   for(i=0;i<header.length;i++){var h2=norm(header[i]);if(!h2)continue;for(a=0;a<aliases.length;a++){if(h2.indexOf(norm(aliases[a]))>-1)return i;}}
   return -1;
 }
-function parseBankProfile(wb, bankId, importId){
+function resolveBank(wb, bankId){
   var prof=BANK_PROFILES[bankId], chosen=null;
   for(var s=0;s<wb.SheetNames.length && !chosen;s++){
     var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[s]],{header:1,defval:"",raw:true,blankrows:false});
@@ -449,26 +458,46 @@ function parseBankProfile(wb, bankId, importId){
   var ci={date:findColByLabel(H,L.date),debit:findColByLabel(H,L.debit),credit:findColByLabel(H,L.credit),
     desc:findColByLabel(H,L.desc),desc2:findColByLabel(H,L.desc2),type:findColByLabel(H,L.type),
     pin:findColByLabel(H,L.partnerIn),pout:findColByLabel(H,L.partnerOut),txid:findColByLabel(H,L.txid)};
+  return {prof:prof,ci:ci,rows:chosen.rows,start:chosen.headerIdx+1};
+}
+function bankRow(row, ci, prof, importId){
+  var deb=parseAmount(row[ci.debit]), crd=parseAmount(row[ci.credit]);
+  var type,amount;
+  if(!isNaN(crd)&&Math.abs(crd)>0){type="income";amount=Math.abs(crd);}
+  else if(!isNaN(deb)&&Math.abs(deb)>0){type="expense";amount=Math.abs(deb);}
+  else return null;
+  var d=toDate(row[ci.date]);
+  var desc=(ci.desc>-1?(""+row[ci.desc]).trim():"")||(ci.desc2>-1?(""+row[ci.desc2]).trim():"")||"—";
+  var partner=type==="income"?(ci.pin>-1?(""+row[ci.pin]).trim():""):(ci.pout>-1?(""+row[ci.pout]).trim():"");
+  var typeTxt=ci.type>-1?(""+row[ci.type]).trim():"";
+  var matchText=desc+" "+typeTxt;
+  var txid=ci.txid>-1?(""+row[ci.txid]).trim():"";
+  return {id:"t"+Math.random().toString(36).slice(2,10),date:d,dateStr:dateStr(d),
+    desc:partner?(desc+" — "+partner):desc, matchText:matchText,
+    category:categorizeFast(norm(matchText),type), type:type, amount:amount, bank:prof.name, importId:importId, manual:false,
+    _key:prof.name+"|"+(txid||(dateStr(d)+"|"+amount.toFixed(2)+"|"+type+"|"+desc))};
+}
+function parseBankProfile(wb, bankId, importId){ // synchronous (used by tests)
+  var r=resolveBank(wb,bankId); if(r.error)return r;
+  compileRules();
   var out=[],skipped=0;
-  for(var i=chosen.headerIdx+1;i<chosen.rows.length;i++){
-    var row=chosen.rows[i];
-    var deb=parseAmount(row[ci.debit]), crd=parseAmount(row[ci.credit]);
-    var type,amount;
-    if(!isNaN(crd)&&Math.abs(crd)>0){type="income";amount=Math.abs(crd);}
-    else if(!isNaN(deb)&&Math.abs(deb)>0){type="expense";amount=Math.abs(deb);}
-    else {skipped++;continue;}
-    var d=toDate(row[ci.date]);
-    var desc=(ci.desc>-1?(""+row[ci.desc]).trim():"")||(ci.desc2>-1?(""+row[ci.desc2]).trim():"")||"—";
-    var partner=type==="income"?(ci.pin>-1?(""+row[ci.pin]).trim():""):(ci.pout>-1?(""+row[ci.pout]).trim():"");
-    var typeTxt=ci.type>-1?(""+row[ci.type]).trim():"";
-    var matchText=[desc,typeTxt].join(" ");
-    var txid=ci.txid>-1?(""+row[ci.txid]).trim():"";
-    out.push({id:"t"+Math.random().toString(36).slice(2,10),date:d,dateStr:dateStr(d),
-      desc:partner?(desc+" — "+partner):desc, matchText:matchText,
-      category:categorize(matchText,type), type:type, amount:amount, bank:prof.name, importId:importId, manual:false,
-      _key:prof.name+"|"+(txid||(dateStr(d)+"|"+amount.toFixed(2)+"|"+type+"|"+desc))});
-  }
+  for(var i=r.start;i<r.rows.length;i++){var rec=bankRow(r.rows[i],r.ci,r.prof,importId);if(rec)out.push(rec);else skipped++;}
   return {records:out,skipped:skipped};
+}
+/* progress + chunked runner (keeps UI responsive on huge files) */
+function showProgress(msg,pct){document.getElementById("progress").classList.add("open");if(msg!=null)document.getElementById("prog-msg").textContent=msg;setProgress(pct);}
+function setProgress(pct){var f=document.getElementById("prog-fill"),p=document.getElementById("prog-pct");if(pct==null){f.style.width="40%";p.textContent="";}else{pct=Math.max(0,Math.min(100,pct));f.style.width=pct+"%";p.textContent=Math.round(pct)+"%";}}
+function progMsg(m){document.getElementById("prog-msg").textContent=m;}
+function hideProgress(){document.getElementById("progress").classList.remove("open");}
+function runChunked(total, stepFn, onProg, done){
+  var i=0, CH=5000;
+  function tick(){
+    var end=Math.min(i+CH,total);
+    for(;i<end;i++) stepFn(i);
+    if(onProg)onProg(total?(i/total):1);
+    if(i<total) setTimeout(tick,0); else done();
+  }
+  tick();
 }
 
 /* ============ HELPERS ============ */
@@ -517,33 +546,58 @@ function addRecords(records){
 function readFile(f){
   var name=f.name.toLowerCase();
   if(!/\.(xlsx|xls|csv)$/.test(name)){toast("ფორმატი არ არის მხარდაჭერილი","err");return;}
-  var importId="imp"+Date.now().toString(36);
+  var importId="imp"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  showProgress("ფაილის წაკითხვა...",0);
   var r=new FileReader();
+  r.onprogress=function(e){if(e.lengthComputable)setProgress(e.loaded/e.total*18);};
+  r.onerror=function(){hideProgress();toast("ფაილის წაკითხვა ვერ მოხერხდა","err");};
   r.onload=function(ev){
-    try{
-      var wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true});
-      if(pendingBank==="bog"||pendingBank==="tbc"){
-        var res=parseBankProfile(wb,pendingBank,importId);
-        if(res.error){toast(res.error,"err");return;}
-        if(!res.records.length){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
-        var r1=addRecords(res.records);
-        if(r1.added>0)imports.push({id:importId,bank:BANK_PROFILES[pendingBank].name,file:f.name,ts:Date.now(),count:r1.added});
-        saveAll();showData();showTab("dashboard");
-        var m=BANK_PROFILES[pendingBank].name+": დაემატა "+r1.added+" ტრანზაქცია";if(r1.dupes)m+=" ("+r1.dupes+" დუბლიკატი)";toast(m,"ok");
-        return;
-      }
-      var ws=wb.Sheets[wb.SheetNames[0]];
-      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:false});
-      if(!rows.length){toast("ფაილი ცარიელია","err");return;}
-      var hIdx=0;for(var i=0;i<Math.min(rows.length,10);i++){if(rows[i].filter(function(c){return(""+c).trim()!=="";}).length>=2){hIdx=i;break;}}
-      headers=rows[hIdx].map(function(h,i){var s=(""+h).trim();return s||("სვეტი "+(i+1));});
-      rawRows=rows.slice(hIdx+1).filter(function(r){return r.some(function(c){return(""+c).trim()!=="";});});
-      if(!rawRows.length){toast("მონაცემები ვერ მოიძებნა","err");return;}
-      window._pendingImportId=importId; window._pendingFile=f.name;
-      openMap();
-    }catch(err){console.error(err);toast("წაკითხვის შეცდომა: "+err.message,"err");}
+    setProgress(20);progMsg("ცხრილის გახსნა...");
+    setTimeout(function(){
+      var wb;
+      try{ wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true}); }
+      catch(err){hideProgress();console.error(err);toast("ფაილის გახსნის შეცდომა: "+err.message,"err");return;}
+      try{
+        if(pendingBank==="bog"||pendingBank==="tbc"){
+          progMsg("სტრუქტურის ამოცნობა...");
+          var info=resolveBank(wb,pendingBank);
+          if(info.error){hideProgress();toast(info.error,"err");return;}
+          compileRules();
+          progMsg("ტრანზაქციების დამუშავება...");
+          var out=[],skipped=0,total=info.rows.length-info.start;
+          runChunked(total,function(k){var rec=bankRow(info.rows[info.start+k],info.ci,info.prof,importId);if(rec)out.push(rec);else skipped++;},
+            function(p){setProgress(20+p*70);},
+            function(){finishImport(out,skipped,importId,pendingBank,f.name);});
+          return;
+        }
+        // generic → mapping modal
+        progMsg("მონაცემების წაკითხვა...");
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:false});
+        if(!rows.length){hideProgress();toast("ფაილი ცარიელია","err");return;}
+        var hIdx=0;for(var i=0;i<Math.min(rows.length,10);i++){if(rows[i].filter(function(c){return(""+c).trim()!=="";}).length>=2){hIdx=i;break;}}
+        headers=rows[hIdx].map(function(h,i){var s=(""+h).trim();return s||("სვეტი "+(i+1));});
+        rawRows=rows.slice(hIdx+1).filter(function(rr){return rr.some(function(c){return(""+c).trim()!=="";});});
+        if(!rawRows.length){hideProgress();toast("მონაცემები ვერ მოიძებნა","err");return;}
+        window._pendingImportId=importId; window._pendingFile=f.name;
+        hideProgress();openMap();
+      }catch(err){hideProgress();console.error(err);toast("დამუშავების შეცდომა: "+err.message,"err");}
+    },40);
   };
   r.readAsArrayBuffer(f);
+}
+function finishImport(records,skipped,importId,bankId,fname){
+  progMsg("ინახება...");setProgress(94);
+  var r1=addRecords(records);
+  var bankName=BANK_PROFILES[bankId]?BANK_PROFILES[bankId].name:"სხვა";
+  if(r1.added>0)imports.push({id:importId,bank:bankName,file:fname,ts:Date.now(),count:r1.added});
+  saveAll();
+  setTimeout(function(){
+    hideProgress();
+    if(!r1.added&&!r1.dupes){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
+    showData();showTab("dashboard");
+    var m=bankName+": დაემატა "+r1.added.toLocaleString()+" ტრანზაქცია";if(r1.dupes)m+=" ("+r1.dupes.toLocaleString()+" დუბლიკატი)";toast(m,"ok");
+  },30);
 }
 
 /* ---- generic mapping ---- */
@@ -607,8 +661,10 @@ function saveAll(){
   clearTimeout(_saveTimer);
   _saveTimer=setTimeout(pushRemote,700);
 }
+var CLOUD_MAX=40000; // single-document cloud storage limit (rows)
 function pushRemote(){
   if(!currentUser)return;
+  if(tx.length>CLOUD_MAX){ if(!window._bigWarned){window._bigWarned=true;toast("⚠️ "+tx.length.toLocaleString()+" ჩანაწერი მეტისმეტია ღრუბლის ერთ დოკუმენტში — ინახება მხოლოდ ამ ბრაუზერში. დიდი მოცულობისთვის საჭიროა per-row ბაზა.","err");} return; }
   if(_saving){_pendingSave=true;return;}
   _saving=true;
   sb.from("finance_state").upsert({user_id:currentUser.id,tx:slimTx(),cats:CATS,imports:imports,updated_at:new Date().toISOString()},{onConflict:"user_id"}).then(function(res){
@@ -623,7 +679,7 @@ function applyState(st){
   CATS=(st&&Array.isArray(st.cats)&&st.cats.length)?st.cats:defaultCats();
   imports=(st&&Array.isArray(st.imports))?st.imports:[];
   tx=hydrateTx(st&&st.tx);
-  normalizeCats();
+  normalizeCats();rulesChanged();
 }
 function loadFromCache(){try{return JSON.parse(localStorage.getItem(cacheKey())||"null");}catch(e){return null;}}
 function loadRemote(done){
@@ -736,11 +792,11 @@ function renderTable(){
     var found=false;opts.forEach(function(c){if(c===t.category)found=true;sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
     if(!found)sel='<select onchange="changeCat(\''+t.id+'\',this.value)"><option selected>'+esc(t.category)+'</option>'+sel.slice(sel.indexOf('>')+1);
     sel+='</select>';
-    var badge=excl?' <span class="pill" style="background:var(--amber-dim);color:var(--amber)">არ ითვლება</span>':'';
-    h+='<tr'+(excl?' style="opacity:.5"':'')+'><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,52)+'</td><td>'+sel+badge+'</td>'+
+    var amtCls=excl?"":(t.type==="income"?"green":"red");
+    h+='<tr'+(excl?' style="opacity:.4"':'')+'><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,52)+'</td><td>'+sel+'</td>'+
        '<td><span class="pill bank">'+esc(t.bank||"სხვა")+'</span></td>'+
        '<td><span class="pill '+(t.type==="income"?"in":"out")+'">'+(t.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
-       '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
+       '<td class="amt '+amtCls+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
   });
   tb.innerHTML=h;
   var info=list.length+" / "+tx.length+" ჩანაწერი";if(list.length>MAX)info+=" (ნაჩვენებია "+MAX+")";
@@ -797,22 +853,26 @@ function addCategory(){
   var name=document.getElementById("new-cat-name").value.trim();var type=document.getElementById("new-cat-type").value;
   if(!name){toast("ჩაწერე კატეგორიის სახელი","err");return;}
   if(CATS.some(function(c){return c.name===name;})){toast("ასეთი კატეგორია უკვე არსებობს","err");return;}
-  CATS.splice(Math.max(0,CATS.length-1),0,{name:name,type:type,keywords:[]}); // insert before "სხვა"
-  document.getElementById("new-cat-name").value="";saveAll();renderCats();toast("დაემატა: "+name,"ok");
+  CATS.splice(Math.max(0,CATS.length-1),0,{name:name,type:type,keywords:[],include:true}); // insert before "სხვა"
+  document.getElementById("new-cat-name").value="";rulesChanged();saveAll();renderCats();toast("დაემატა: "+name,"ok");
 }
 function delCategory(i){
   var c=CATS[i];if(!c)return;
   if(!confirm('წავშალო კატეგორია „'+c.name+'"? ამ კატეგორიის ტრანზაქციები გადავა „'+DEFAULT_CAT+'"-ში.'))return;
   tx.forEach(function(t){if(t.category===c.name){t.category=DEFAULT_CAT;}});
-  CATS.splice(i,1);saveAll();renderCats();render();toast("წაიშალა","ok");
+  CATS.splice(i,1);rulesChanged();saveAll();renderCats();render();toast("წაიშალა","ok");
 }
-function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;saveAll();renderCats();}}
+function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;rulesChanged();saveAll();renderCats();}}
 function toggleInclude(i,v){if(CATS[i]){CATS[i].include=v;saveAll();renderCats();if(tx.length)render();}}
-function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(CATS[i].keywords.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].keywords.push(val);saveAll();renderCats();}
-function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);saveAll();renderCats();}}
+function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(CATS[i].keywords.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].keywords.push(val);rulesChanged();saveAll();renderCats();}
+function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);rulesChanged();saveAll();renderCats();}}
 function recategorize(){
-  var n=0;tx.forEach(function(t){if(t.manual)return;var nc=categorize(t.matchText||t.desc,t.type);if(nc!==t.category){t.category=nc;n++;}});
-  saveAll();render();toast("ხელახლა დაკატეგორდა "+n+" ტრანზაქცია (ხელით შეცვლილები ხელუხლებელია)","ok");
+  compileRules();
+  var n=0,total=tx.length,changed=0;
+  showProgress("ხელახლა კატეგორიზაცია...",0);
+  runChunked(total,function(k){var t=tx[k];if(t.manual)return;var nc=categorizeFast(norm(t.matchText||t.desc),t.type);if(nc!==t.category){t.category=nc;changed++;}},
+    function(p){setProgress(p*100);},
+    function(){saveAll();hideProgress();render();toast("ხელახლა დაკატეგორდა "+changed.toLocaleString()+" ტრანზაქცია (ხელით შეცვლილები ხელუხლებელია)","ok");});
 }
 
 /* ============ HISTORY ============ */
@@ -875,8 +935,12 @@ function renderCharts(){
   var cinc=catData(list,"income");
   destroyChart("catInc");
   charts.catInc=new Chart(document.getElementById("chart-cat-inc"),{type:"doughnut",data:{labels:cinc.labels,datasets:[{data:cinc.vals,backgroundColor:cinc.colors,borderColor:"#0d1318",borderWidth:2}]},options:doughnutOpts()});
-  var dated=list.filter(function(t){return t.date;}).slice().sort(function(a,b){return a.date-b.date;});
-  var run=0,labels=[],data=[];dated.forEach(function(t){run+=t.type==="income"?t.amount:-t.amount;labels.push(t.dateStr);data.push(run);});
+  // aggregate cumulative balance by day (downsample to keep charts fast on huge datasets)
+  var byDay={};list.forEach(function(t){if(!t.date)return;byDay[t.dateStr]=(byDay[t.dateStr]||0)+(t.type==="income"?t.amount:-t.amount);});
+  var days=Object.keys(byDay).sort();
+  var stepEvery=days.length>1500?Math.ceil(days.length/1500):1;
+  var run=0,labels=[],data=[];
+  days.forEach(function(k,idx){run+=byDay[k];if(idx%stepEvery===0||idx===days.length-1){labels.push(k);data.push(run);}});
   destroyChart("cum");
   charts.cum=new Chart(document.getElementById("chart-cum"),{type:"line",data:{labels:labels,datasets:[{label:"ბალანსი",data:data,borderColor:"#00d4a0",backgroundColor:"#00d4a022",tension:.25,borderWidth:2,pointRadius:0,fill:true}]},options:baseOpts()});
 }
