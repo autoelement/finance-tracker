@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ფინანსები — Excel ანალიზი</title>
+<title>ფინანსები — ბანკის ამონაწერების ანალიზი</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Georgian:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -25,8 +25,7 @@ body{background:var(--bg);color:var(--text);font-family:'Noto Sans Georgian',san
 .mono{font-family:'Space Mono',monospace}
 button{font-family:inherit}
 
-/* HEADER */
-header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .logo{font-family:'Space Mono',monospace;font-size:17px;font-weight:700;color:var(--green);letter-spacing:.06em}
 .logo span{color:var(--text3)}
 .h-spacer{flex:1}
@@ -37,27 +36,32 @@ header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-f
 .btn-danger:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
 .btn-sm{padding:6px 11px;font-size:12px}
 
-.wrap{max-width:1200px;margin:0 auto;padding:22px 20px 80px}
+/* TABS */
+.tabs{position:sticky;top:57px;z-index:99;background:rgba(8,12,15,.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:4px;overflow-x:auto}
+.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);padding:13px 16px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
 
-/* DROPZONE */
+.wrap{max-width:1200px;margin:0 auto;padding:20px 20px 80px}
+.page{display:none}
+.page.active{display:block}
+
 .dropzone{border:2px dashed var(--border2);border-radius:18px;padding:54px 24px;text-align:center;background:var(--bg2);cursor:pointer;transition:all .2s;margin-bottom:22px}
 .dropzone:hover,.dropzone.drag{border-color:var(--green);background:var(--green-dim)}
 .dropzone .dz-ico{font-size:48px;margin-bottom:12px}
 .dropzone h2{font-size:20px;font-weight:600;margin-bottom:8px}
-.dropzone p{color:var(--text2);font-size:14px;line-height:1.6;max-width:480px;margin:0 auto}
+.dropzone p{color:var(--text2);font-size:14px;line-height:1.6;max-width:520px;margin:0 auto}
 .dropzone .fmt{margin-top:14px;font-size:12px;color:var(--text3)}
 
-.section-title{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:26px 0 14px}
+.section-title{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:26px 0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 
-/* STATS */
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
 .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
 .stat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-.stat-val{font-size:26px;font-weight:700;font-family:'Space Mono',monospace;line-height:1.1}
+.stat-val{font-size:25px;font-weight:700;font-family:'Space Mono',monospace;line-height:1.1}
 .stat-sub{font-size:12px;color:var(--text2);margin-top:6px}
 .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}
 
-/* CHARTS GRID */
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
 .chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px}
 .chart-card.full{grid-column:1/-1}
@@ -66,7 +70,6 @@ header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-f
 .chart-body{position:relative;height:260px}
 .chart-body.tall{height:300px}
 
-/* MAPPING MODAL */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:500;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
 .overlay.open{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:18px;padding:26px;max-width:640px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.5)}
@@ -82,11 +85,10 @@ select:focus,input:focus{outline:none;border-color:var(--green)}
 .preview-tbl{max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin:6px 0 20px}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
 
-/* TABLE */
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden}
 .table-tools{display:flex;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center}
-.table-tools input[type=text]{max-width:260px}
-.table-tools select{max-width:180px}
+.table-tools input[type=text]{max-width:240px}
+.table-tools select{max-width:170px}
 .tbl-scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;padding:11px 14px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
@@ -98,6 +100,11 @@ td.amt{font-family:'Space Mono',monospace;font-weight:700;text-align:right}
 .pill.in{background:var(--green-dim);color:var(--green)}
 .pill.out{background:var(--red-dim);color:var(--red)}
 .pill.bank{background:var(--bg3);color:var(--text2);border:1px solid var(--border2)}
+td select{padding:5px 8px;font-size:12px;min-width:150px}
+.empty{text-align:center;padding:40px;color:var(--text3)}
+.tbl-foot{padding:12px 16px;color:var(--text3);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.clickable{cursor:pointer}
+.clickable:hover td{background:var(--green-dim)}
 
 /* BANK PICKER */
 .bank-opts{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px}
@@ -106,22 +113,40 @@ td.amt{font-family:'Space Mono',monospace;font-weight:700;text-align:right}
 .bank-opt .bo-ico{font-size:26px}
 .bank-opt .bo-tit{font-size:15px;font-weight:600}
 .bank-opt .bo-sub{font-size:12px;color:var(--text3);margin-top:2px}
-td select{padding:5px 8px;font-size:12px;min-width:130px}
-.empty{text-align:center;padding:40px;color:var(--text3)}
-.tbl-foot{padding:12px 16px;color:var(--text3);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 
-/* TOAST */
+/* CATEGORY MANAGER */
+.cat-add{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.cat-add input{flex:1;min-width:160px}
+.cat-add select{max-width:150px}
+.cat-list{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px}
+.cat-card-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.cat-name{font-size:15px;font-weight:600;flex:1;display:flex;align-items:center;gap:8px}
+.cat-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.cat-type{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--bg3);color:var(--text3);border:1px solid var(--border2)}
+.cat-type.income{color:var(--green)}.cat-type.expense{color:var(--red)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:4px 9px;border-radius:16px;font-size:12px}
+.chip b{cursor:pointer;color:var(--text3);font-weight:700}
+.chip b:hover{color:var(--red)}
+.chip.none{color:var(--text3);border-style:dashed;font-style:italic}
+.kw-add{display:flex;gap:6px}
+.kw-add input{padding:7px 10px;font-size:13px}
+.kw-add button{padding:7px 12px}
+.cat-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:6px}
+.cat-del:hover{color:var(--red);background:var(--red-dim)}
+
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:13px 20px;border-radius:11px;font-size:14px;z-index:900;transition:transform .3s;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 #toast.show{transform:translateX(-50%) translateY(0)}
 #toast.ok{border-color:var(--green)}
 #toast.err{border-color:var(--red)}
-
 .hidden{display:none!important}
 
 @media(max-width:820px){
   .stats{grid-template-columns:1fr 1fr}
   .charts{grid-template-columns:1fr}
   .chart-card.full{grid-column:auto}
+  .cat-list{grid-template-columns:1fr}
   .wrap{padding:16px 14px 70px}
 }
 </style>
@@ -132,113 +157,119 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
   <div class="logo">₾<span>/</span>FIN</div>
   <div class="h-spacer"></div>
   <button class="btn btn-sm" id="btn-import" onclick="triggerImport()">＋ იმპორტი</button>
-  <button class="btn btn-sm btn-danger hidden" id="btn-clear" onclick="clearAll()">🗑 გასუფთავება</button>
+  <button class="btn btn-sm btn-danger hidden" id="btn-clear" onclick="clearAll()">🗑 ყველაფრის წაშლა</button>
   <input type="file" id="file-input" accept=".xlsx,.xls,.csv" class="hidden">
 </header>
 
+<div class="tabs" id="tabs">
+  <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard')">მთავარი</button>
+  <button class="tab" data-tab="monthly" onclick="showTab('monthly')">თვეები</button>
+  <button class="tab" data-tab="categories" onclick="showTab('categories')">კატეგორიები</button>
+  <button class="tab" data-tab="history" onclick="showTab('history')">ისტორია</button>
+</div>
+
 <div class="wrap">
 
-  <!-- EMPTY / DROPZONE -->
+  <!-- EMPTY -->
   <div id="dropzone" class="dropzone" onclick="triggerImport()">
     <div class="dz-ico">📊</div>
     <h2>ატვირთე ბანკის ამონაწერი</h2>
-    <p>დააჭირე, აირჩიე ბანკი (საქართველოს ბანკი / თიბისი / სხვა) და ატვირთე Excel. სისტემა ავტომატურად დაარისხებს ხარჯებად და შემოსავლებად, დაითვლის მოგება/ზარალს და დახატავს გრაფიკებს. ორივე ბანკის ატვირთვისას მონაცემები გაერთიანდება.</p>
+    <p>დააჭირე, აირჩიე ბანკი (საქართველოს ბანკი / თიბისი / სხვა) და ატვირთე Excel. სისტემა ავტომატურად დაარისხებს შემოსავლებად და ხარჯებად, დაარისხებს შენს კატეგორიებში დანიშნულების მიხედვით, დაითვლის მოგება/ზარალს და დახატავს გრაფიკებს. რამდენიმე ფაილი ერთმანეთს ემატება.</p>
     <div class="fmt">მხარდაჭერილი ფორმატები: .xlsx · .xls · .csv</div>
   </div>
 
   <!-- DASHBOARD -->
-  <div id="dashboard" class="hidden">
-
+  <div class="page" id="page-dashboard">
+    <div class="section-title">
+      <span>მიმოხილვა</span>
+      <select id="period" onchange="onPeriodChange()" style="max-width:200px"><option value="">ყველა პერიოდი</option></select>
+    </div>
     <div class="stats">
       <div class="stat-card"><div class="stat-label">შემოსავალი</div><div class="stat-val green" id="k-income">₾0</div><div class="stat-sub" id="k-income-sub">0 ჩანაწერი</div></div>
       <div class="stat-card"><div class="stat-label">ხარჯი</div><div class="stat-val red" id="k-expense">₾0</div><div class="stat-sub" id="k-expense-sub">0 ჩანაწერი</div></div>
       <div class="stat-card"><div class="stat-label">მოგება / ზარალი</div><div class="stat-val" id="k-net">₾0</div><div class="stat-sub" id="k-margin">—</div></div>
-      <div class="stat-card"><div class="stat-label">პერიოდი</div><div class="stat-val blue" id="k-period" style="font-size:16px;line-height:1.4">—</div><div class="stat-sub" id="k-count">0 ტრანზაქცია</div></div>
+      <div class="stat-card"><div class="stat-label">პერიოდი</div><div class="stat-val blue" id="k-period" style="font-size:15px;line-height:1.4">—</div><div class="stat-sub" id="k-count">0 ტრანზაქცია</div></div>
     </div>
 
     <div class="section-title">ანალიტიკა</div>
     <div class="charts">
-      <div class="chart-card full">
-        <div class="chart-head"><div class="chart-title">მოგება/ზარალი დროში (თვეების მიხედვით)</div></div>
-        <div class="chart-body tall"><canvas id="chart-pnl"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-head"><div class="chart-title">შემოსავალი vs ხარჯი</div></div>
-        <div class="chart-body"><canvas id="chart-io"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-head"><div class="chart-title">ხარჯები კატეგორიების მიხედვით</div></div>
-        <div class="chart-body"><canvas id="chart-cat-exp"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-head"><div class="chart-title">შემოსავალი კატეგორიების მიხედვით</div></div>
-        <div class="chart-body"><canvas id="chart-cat-inc"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-head"><div class="chart-title">კუმულაციური ბალანსი</div></div>
-        <div class="chart-body"><canvas id="chart-cum"></canvas></div>
-      </div>
+      <div class="chart-card full"><div class="chart-head"><div class="chart-title">მოგება/ზარალი თვეების მიხედვით</div></div><div class="chart-body tall"><canvas id="chart-pnl"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="chart-title">შემოსავალი vs ხარჯი</div></div><div class="chart-body"><canvas id="chart-io"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="chart-title">ხარჯები კატეგორიების მიხედვით</div></div><div class="chart-body"><canvas id="chart-cat-exp"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="chart-title">შემოსავალი კატეგორიების მიხედვით</div></div><div class="chart-body"><canvas id="chart-cat-inc"></canvas></div></div>
+      <div class="chart-card"><div class="chart-head"><div class="chart-title">კუმულაციური ბალანსი</div></div><div class="chart-body"><canvas id="chart-cum"></canvas></div></div>
     </div>
 
     <div class="section-title">ტრანზაქციები</div>
     <div class="table-wrap">
       <div class="table-tools">
-        <input type="text" id="search" placeholder="🔍 ძებნა აღწერით..." oninput="renderTable()">
-        <select id="filter-type" onchange="renderTable()">
-          <option value="">ყველა ტიპი</option>
-          <option value="income">შემოსავალი</option>
-          <option value="expense">ხარჯი</option>
-        </select>
+        <input type="text" id="search" placeholder="🔍 ძებნა..." oninput="renderTable()">
+        <select id="filter-type" onchange="renderTable()"><option value="">ყველა ტიპი</option><option value="income">შემოსავალი</option><option value="expense">ხარჯი</option></select>
         <select id="filter-cat" onchange="renderTable()"><option value="">ყველა კატეგორია</option></select>
         <select id="filter-bank" onchange="renderTable()"><option value="">ყველა ბანკი</option></select>
-        <div class="h-spacer" style="flex:1"></div>
-        <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV ექსპორტი</button>
+        <div class="h-spacer"></div>
+        <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV</button>
       </div>
-      <div class="tbl-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th onclick="sortBy('date')">თარიღი</th>
-              <th onclick="sortBy('desc')">აღწერა</th>
-              <th onclick="sortBy('category')">კატეგორია</th>
-              <th onclick="sortBy('bank')">ბანკი</th>
-              <th onclick="sortBy('type')">ტიპი</th>
-              <th onclick="sortBy('amount')" style="text-align:right">თანხა</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-      <div class="tbl-foot">
-        <span id="tbl-info">—</span>
-        <span id="tbl-sum" class="mono"></span>
-      </div>
+      <div class="tbl-scroll"><table><thead><tr>
+        <th onclick="sortBy('date')">თარიღი</th>
+        <th onclick="sortBy('desc')">დანიშნულება</th>
+        <th onclick="sortBy('category')">კატეგორია</th>
+        <th onclick="sortBy('bank')">ბანკი</th>
+        <th onclick="sortBy('type')">ტიპი</th>
+        <th onclick="sortBy('amount')" style="text-align:right">თანხა</th>
+      </tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="tbl-foot"><span id="tbl-info">—</span><span id="tbl-sum" class="mono"></span></div>
+    </div>
+  </div>
+
+  <!-- MONTHLY -->
+  <div class="page" id="page-monthly">
+    <div class="section-title">თვეების მიხედვით</div>
+    <div class="table-wrap">
+      <div class="tbl-scroll"><table><thead><tr>
+        <th>თვე</th><th style="text-align:right">ტრანზაქცია</th>
+        <th style="text-align:right">შემოსავალი</th><th style="text-align:right">ხარჯი</th><th style="text-align:right">მოგება/ზარალი</th><th></th>
+      </tr></thead><tbody id="monthly-body"></tbody></table></div>
+    </div>
+    <div class="hint" style="margin-top:10px">თვეზე დაჭერით მთავარ ეკრანზე მხოლოდ ის პერიოდი გაიფილტრება.</div>
+  </div>
+
+  <!-- CATEGORIES -->
+  <div class="page" id="page-categories">
+    <div class="section-title"><span>კატეგორიები და წესები</span>
+      <button class="btn btn-sm btn-primary" onclick="recategorize()">↻ ხელახლა დაკატეგორება</button>
+    </div>
+    <div class="cat-add">
+      <input type="text" id="new-cat-name" placeholder="ახალი კატეგორიის სახელი" onkeydown="if(event.key==='Enter')addCategory()">
+      <select id="new-cat-type"><option value="any">ნებისმიერი</option><option value="income">შემოსავალი</option><option value="expense">ხარჯი</option></select>
+      <button class="btn btn-sm" onclick="addCategory()">＋ დამატება</button>
+    </div>
+    <div class="hint" style="margin:-6px 0 16px">დაამატე თითო კატეგორიას საკვანძო სიტყვები/ფრაზები. თუ ამონაწერის დანიშნულებაში ეს ტექსტი შეგხვდება, ტრანზაქცია ავტომატურად ამ კატეგორიაში მოხვდება. წესები მოწმდება ზემოდან ქვემოთ — პირველი დამთხვევა იმარჯვებს.</div>
+    <div class="cat-list" id="cat-list"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="page" id="page-history">
+    <div class="section-title">იმპორტების ისტორია</div>
+    <div class="table-wrap">
+      <div class="tbl-scroll"><table><thead><tr>
+        <th>თარიღი/დრო</th><th>ბანკი</th><th>ფაილი</th><th style="text-align:right">ჩანაწერი</th><th></th>
+      </tr></thead><tbody id="history-body"></tbody></table></div>
     </div>
   </div>
 </div>
 
-<!-- BANK PICKER MODAL -->
+<!-- BANK PICKER -->
 <div class="overlay" id="bank-overlay">
   <div class="modal" style="max-width:460px">
     <h2>აირჩიე ბანკი</h2>
     <div class="sub">რომელი ბანკის ამონაწერს ტვირთავ? სისტემა ავტომატურად ამოიცნობს სტრუქტურას. რამდენიმე ფაილის ატვირთვისას მონაცემები ერთმანეთს დაემატება.</div>
     <div class="bank-opts">
-      <button class="bank-opt" onclick="pickBank('bog')">
-        <span class="bo-ico">🟠</span>
-        <span><span class="bo-tit">საქართველოს ბანკი</span><span class="bo-sub">BOG — Statement of Account</span></span>
-      </button>
-      <button class="bank-opt" onclick="pickBank('tbc')">
-        <span class="bo-ico">🔵</span>
-        <span><span class="bo-tit">თიბისი ბანკი</span><span class="bo-sub">TBC — Account Statement</span></span>
-      </button>
-      <button class="bank-opt" onclick="pickBank('other')">
-        <span class="bo-ico">📄</span>
-        <span><span class="bo-tit">სხვა / ავტომატური</span><span class="bo-sub">სვეტების ხელით მიბმა</span></span>
-      </button>
+      <button class="bank-opt" onclick="pickBank('bog')"><span class="bo-ico">🟠</span><span><span class="bo-tit">საქართველოს ბანკი</span><span class="bo-sub">BOG — Statement of Account</span></span></button>
+      <button class="bank-opt" onclick="pickBank('tbc')"><span class="bo-ico">🔵</span><span><span class="bo-tit">თიბისი ბანკი</span><span class="bo-sub">TBC — Account Statement</span></span></button>
+      <button class="bank-opt" onclick="pickBank('other')"><span class="bo-ico">📄</span><span><span class="bo-tit">სხვა / ავტომატური</span><span class="bo-sub">სვეტების ხელით მიბმა</span></span></button>
     </div>
-    <div class="modal-actions">
-      <button class="btn" onclick="closeBankPicker()">გაუქმება</button>
-    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeBankPicker()">გაუქმება</button></div>
   </div>
 </div>
 
@@ -247,50 +278,23 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
   <div class="modal">
     <h2>სვეტების მიბმა</h2>
     <div class="sub">მიუთითე, ფაილის რომელი სვეტი რას შეესაბამება. სისტემამ თავად შეარჩია სავარაუდო ვარიანტები — შეამოწმე და საჭიროებისამებრ შეასწორე.</div>
-
-    <div class="field">
-      <label>თარიღის სვეტი <span class="req">*</span></label>
-      <select id="col-date"></select>
-    </div>
-    <div class="field">
-      <label>აღწერა / დასახელება <span class="req">*</span></label>
-      <select id="col-desc"></select>
-    </div>
-    <div class="field">
-      <label>თანხის სვეტი <span class="req">*</span></label>
-      <select id="col-amount"></select>
-    </div>
-
+    <div class="field"><label>თარიღის სვეტი <span class="req">*</span></label><select id="col-date"></select></div>
+    <div class="field"><label>დანიშნულება / აღწერა <span class="req">*</span></label><select id="col-desc"></select></div>
+    <div class="field"><label>თანხის სვეტი <span class="req">*</span></label><select id="col-amount"></select></div>
     <div class="field-row">
-      <div class="field">
-        <label>ტიპის სვეტი (არასავალდებულო)</label>
-        <select id="col-type"></select>
-        <div class="hint">თუ არსებობს სვეტი „შემოსავალი/ხარჯი"-ს აღმნიშვნელი.</div>
-      </div>
-      <div class="field">
-        <label>კატეგორიის სვეტი (არასავალდებულო)</label>
-        <select id="col-cat"></select>
-        <div class="hint">თუ არ მიუთითებ — ავტომატურად დაკატეგორიზდება.</div>
+      <div class="field"><label>ტიპის სვეტი (არასავალდებულო)</label><select id="col-type"></select></div>
+      <div class="field"><label>შემოსავალი/ხარჯის განსაზღვრა</label>
+        <select id="sign-mode">
+          <option value="auto">ავტომატური</option>
+          <option value="sign">ნიშნით: + შემოსავალი, − ხარჯი</option>
+          <option value="all-expense">ყველა ხარჯია</option>
+          <option value="all-income">ყველა შემოსავალია</option>
+        </select>
       </div>
     </div>
-
-    <div class="field">
-      <label>შემოსავალი/ხარჯის განსაზღვრა</label>
-      <select id="sign-mode">
-        <option value="auto">ავტომატური (ნიშნის ან ტიპის სვეტის მიხედვით)</option>
-        <option value="sign">თანხის ნიშნით: დადებითი = შემოსავალი, უარყოფითი = ხარჯი</option>
-        <option value="all-expense">ყველა ჩანაწერი ხარჯია</option>
-        <option value="all-income">ყველა ჩანაწერი შემოსავალია</option>
-      </select>
-    </div>
-
     <div class="section-title" style="margin:20px 0 8px">წინასწარი ხედი</div>
     <div class="preview-tbl" id="map-preview"></div>
-
-    <div class="modal-actions">
-      <button class="btn" onclick="closeMap()">გაუქმება</button>
-      <button class="btn btn-primary" onclick="applyMapping()">დამუშავება</button>
-    </div>
+    <div class="modal-actions"><button class="btn" onclick="closeMap()">გაუქმება</button><button class="btn btn-primary" onclick="applyMapping()">დამუშავება</button></div>
   </div>
 </div>
 
@@ -300,22 +304,57 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
 "use strict";
 
 /* ============ STATE ============ */
-var STORE_KEY = "fin_tx_v2";
-var tx = [];              // {id,date,dateStr,desc,category,type,amount,bank}
-var rawRows = [];         // array-of-arrays from imported sheet (generic flow)
-var headers = [];
-var sortKey = "date", sortDir = -1;
-var charts = {};
-var pendingBank = "other"; // which bank was selected for the current import
+var K_TX="fin_tx_v3", K_CATS="fin_cats_v1", K_IMP="fin_imports_v1";
+var tx = [];            // {id,date,dateStr,desc,matchText,category,type,amount,bank,importId,manual,_key}
+var CATS = [];          // [{name,type:'any'|'income'|'expense',keywords:[...]}]
+var imports = [];       // [{id,bank,file,ts,count}]
+var DEFAULT_CAT = "სხვა";
+var rawRows=[], headers=[], pendingBank="other";
+var sortKey="date", sortDir=-1, periodFilter="", curTab="dashboard";
+var charts={};
+
+/* default categories (order = matching priority, top wins) */
+function defaultCats(){
+  return [
+    {name:"მძღოლებზე გაცემული",type:"expense",keywords:["გამომუშავებ"]},
+    {name:"ბანკის საკომისიო",type:"expense",keywords:["საკომისიო","commission","მომსახურების საფასურ"]},
+    {name:"იანდექსი",type:"expense",keywords:["yandex","იანდექს"]},
+    {name:"კომუნალური მომსახურება",type:"expense",keywords:["დენ","ელექტრო","წყალ","გაზი","ინტერნეტ","კომუნალ","magti","silknet"]},
+    {name:"პროგრამული უზრუნველყოფა",type:"expense",keywords:["software","subscription","google","microsoft","პროგრამ"]},
+    {name:"მარკეტინგი",type:"expense",keywords:["რეკლამ","marketing","facebook","meta","google ads","მარკეტ"]},
+    {name:"საბიუჯეტო გადასახადი",type:"expense",keywords:["ბიუჯეტ","საშემოსავლო","დღგ","ხაზინა","საგადასახადო"]},
+    {name:"ონლაინ გადასახადები",type:"expense",keywords:[]},
+    {name:"აღჭურვილობა",type:"expense",keywords:[]},
+    {name:"ინვენტარი",type:"expense",keywords:[]},
+    {name:"თანამშრომელთა ხელფასები",type:"expense",keywords:["ხელფას","ანაზღაურება თანამშრ"]},
+    {name:"საოპერაციო ხარჯები",type:"expense",keywords:[]},
+    {name:"მოგების განაწილება",type:"expense",keywords:["მოგების განაწ","დივიდენდ"]},
+    {name:"კომპენსაცია პარკებს (ბონუსები)",type:"expense",keywords:["კომპენსაცია","ბონუს"]},
+    {name:"საკომისიო პარკებიდან",type:"income",keywords:[]},
+    {name:"ახალი მძღოლების საკომისიო პარკებიდან",type:"income",keywords:[]},
+    {name:"პრო პაკეტის შემოსავალი",type:"income",keywords:["პრო პაკეტ"]},
+    {name:"ბალანსის შევსება",type:"any",keywords:["ბალანსის შევსება","შევსება"]},
+    {name:"სხვა",type:"any",keywords:[]}
+  ];
+}
+
+/* ============ CATEGORIZATION ENGINE ============ */
+function norm(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
+function categorize(text, type){
+  var t=norm(text);
+  for(var i=0;i<CATS.length;i++){
+    var c=CATS[i];
+    if(c.type!=="any" && c.type!==type) continue;
+    for(var j=0;j<c.keywords.length;j++){
+      var kw=norm(c.keywords[j]); if(kw && t.indexOf(kw)>-1) return c.name;
+    }
+  }
+  return DEFAULT_CAT;
+}
+function catNames(){return CATS.map(function(c){return c.name;});}
+function catType(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)return CATS[i].type;return "any";}
 
 /* ============ BANK PROFILES ============ */
-/* columns resolved by header label (robust to blank rows / reordering).
-   debit = გასული/დებეტი (expense), credit = შემოსული/კრედიტი (income). */
-var BANK_LABELS = {
-  bog:"BOG — საქართველოს ბანკი",
-  tbc:"TBC — თიბისი ბანკი",
-  other:"სხვა / ავტომატური"
-};
 var BANK_PROFILES = {
   bog:{ name:"BOG", need:["დებეტი","კრედიტი"], labels:{
     date:["თარიღი"], debit:["დებეტი"], credit:["კრედიტი"],
@@ -328,34 +367,26 @@ var BANK_PROFILES = {
     partnerIn:["პარტნიორი"], partnerOut:["პარტნიორი"], txid:["ტრანზაქციის id"]
   }}
 };
-function normH(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
 function findColByLabel(header,aliases){
-  if(!aliases)return -1;
-  var i,a;
-  // 1) exact match first (avoids "პარტნიორი" matching "პარტნიორის ანგარიში")
-  for(i=0;i<header.length;i++){var h=normH(header[i]);for(a=0;a<aliases.length;a++){if(h===normH(aliases[a]))return i;}}
-  // 2) substring match
-  for(i=0;i<header.length;i++){var h2=normH(header[i]);if(!h2)continue;for(a=0;a<aliases.length;a++){if(h2.indexOf(normH(aliases[a]))>-1)return i;}}
+  if(!aliases)return -1; var i,a;
+  for(i=0;i<header.length;i++){var h=norm(header[i]);for(a=0;a<aliases.length;a++){if(h===norm(aliases[a]))return i;}}
+  for(i=0;i<header.length;i++){var h2=norm(header[i]);if(!h2)continue;for(a=0;a<aliases.length;a++){if(h2.indexOf(norm(aliases[a]))>-1)return i;}}
   return -1;
 }
-function parseBankProfile(wb, bankId){
-  var prof=BANK_PROFILES[bankId];
-  var chosen=null;
+function parseBankProfile(wb, bankId, importId){
+  var prof=BANK_PROFILES[bankId], chosen=null;
   for(var s=0;s<wb.SheetNames.length && !chosen;s++){
     var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[s]],{header:1,defval:"",raw:true,blankrows:false});
     for(var r=0;r<Math.min(rows.length,40);r++){
-      var hr=rows[r].map(normH);
-      var ok=prof.need.every(function(lbl){var n=normH(lbl);return hr.some(function(h){return h.indexOf(n)>-1;});});
-      if(ok){chosen={rows:rows,headerIdx:r,header:rows[r]};break;}
+      var hr=rows[r].map(norm);
+      if(prof.need.every(function(lbl){var n=norm(lbl);return hr.some(function(h){return h.indexOf(n)>-1;});})){chosen={rows:rows,headerIdx:r,header:rows[r]};break;}
     }
   }
   if(!chosen)return {error:"ვერ ვიპოვე "+prof.name+"-ის სტრუქტურა ამ ფაილში. დარწმუნდი, რომ სწორი ბანკი აირჩიე."};
   var L=prof.labels,H=chosen.header;
-  var ci={
-    date:findColByLabel(H,L.date), debit:findColByLabel(H,L.debit), credit:findColByLabel(H,L.credit),
-    desc:findColByLabel(H,L.desc), desc2:findColByLabel(H,L.desc2), type:findColByLabel(H,L.type),
-    pin:findColByLabel(H,L.partnerIn), pout:findColByLabel(H,L.partnerOut), txid:findColByLabel(H,L.txid)
-  };
+  var ci={date:findColByLabel(H,L.date),debit:findColByLabel(H,L.debit),credit:findColByLabel(H,L.credit),
+    desc:findColByLabel(H,L.desc),desc2:findColByLabel(H,L.desc2),type:findColByLabel(H,L.type),
+    pin:findColByLabel(H,L.partnerIn),pout:findColByLabel(H,L.partnerOut),txid:findColByLabel(H,L.txid)};
   var out=[],skipped=0;
   for(var i=chosen.headerIdx+1;i<chosen.rows.length;i++){
     var row=chosen.rows[i];
@@ -368,557 +399,399 @@ function parseBankProfile(wb, bankId){
     var desc=(ci.desc>-1?(""+row[ci.desc]).trim():"")||(ci.desc2>-1?(""+row[ci.desc2]).trim():"")||"—";
     var partner=type==="income"?(ci.pin>-1?(""+row[ci.pin]).trim():""):(ci.pout>-1?(""+row[ci.pout]).trim():"");
     var typeTxt=ci.type>-1?(""+row[ci.type]).trim():"";
-    var catText=[desc,typeTxt].join(" ");
+    var matchText=[desc,typeTxt].join(" ");
     var txid=ci.txid>-1?(""+row[ci.txid]).trim():"";
-    out.push({
-      id:"t"+Math.random().toString(36).slice(2,10),
-      date:d, dateStr:dateStr(d),
-      desc:partner?(desc+" — "+partner):desc,
-      category:autoCategory(catText,type), type:type, amount:amount, bank:prof.name,
-      _key:prof.name+"|"+(txid||(dateStr(d)+"|"+amount.toFixed(2)+"|"+type+"|"+desc))
-    });
+    out.push({id:"t"+Math.random().toString(36).slice(2,10),date:d,dateStr:dateStr(d),
+      desc:partner?(desc+" — "+partner):desc, matchText:matchText,
+      category:categorize(matchText,type), type:type, amount:amount, bank:prof.name, importId:importId, manual:false,
+      _key:prof.name+"|"+(txid||(dateStr(d)+"|"+amount.toFixed(2)+"|"+type+"|"+desc))});
   }
   return {records:out,skipped:skipped};
 }
 
-/* ============ CATEGORY AUTO-RULES (ka + en keywords) ============ */
-var CATEGORIES = ["ჩარიცხვები","ანაზღაურება","საკომისიო","კონვერტაცია","გადასახადები","ხელფასი","გაყიდვები","საკვები","ტრანსპორტი","კომუნალური","ქირა","გართობა","ჯანმრთელობა","შოპინგი","განათლება","სხვა"];
-// income and expense use separate rule sets; each falls back sensibly by type
-var INCOME_RULES = [
-  ["ხელფასი",   ["ხელფას","salary","payroll","wage"]],
-  ["გაყიდვები", ["გაყიდვ","sale","invoice","ინვოის","revenue"]]
-];
-var EXPENSE_RULES = [
-  ["ანაზღაურება",["გამომუშავებ","ანაზღაურ","payout"]],
-  ["საკომისიო", ["საკომისიო","საკომ.","commission"]],
-  ["კონვერტაცია",["კონვერტაცია","კონვერს","conversion","გადაცვლა"]],
-  ["გადასახადები",["გადასახად","tax","დღგ","vat","ჯარიმ","fine","interest"]],
-  ["ხელფასი",   ["ხელფას","salary","payroll"]],
-  ["საკვები",   ["საკვებ","რესტორ","კაფე","supermarket","სუპერ","food","grocery","ლანჩ","ვახშ","carrefour","spar","nikora","goodwill"]],
-  ["ტრანსპორტი",["ბენზ","საწვავ","fuel","taxi","ტაქს","bolt","uber","yandex","ავტობუს","მეტრო","parking"]],
-  ["კომუნალური",["ელექტრო","წყალ","ინტერნეტ","internet","electric","water","utility","კომუნალ","magti","silknet"]],
-  ["ქირა",      ["ქირ","rent","არენდ","lease","იჯარ"]],
-  ["გართობა",   ["კინო","cinema","გართობ","netflix","spotify"]],
-  ["ჯანმრთელობა",["აფთიაქ","pharm","კლინიკ","clinic","ჰოსპ","hospital","ექიმ","doctor","health","medical"]],
-  ["შოპინგი",   ["ტანსაცმ","clothes","zara","მაღაზ","electronics","ტექნიკ","amazon","aliexpress"]],
-  ["განათლება", ["სწავლ","universit","school","სკოლ","course","კურს","education","training"]]
-];
-// match keyword: ASCII single words use word boundaries (so "tax" != "Taxi"); others use substring
-function kwHit(text, kw){
-  kw=kw.toLowerCase();
-  if(/^[a-z]+$/.test(kw)){
-    return new RegExp("\\b"+kw+"\\b").test(text);
-  }
-  return text.indexOf(kw)>-1;
-}
-function autoCategory(desc, type){
-  var d = (desc||"").toLowerCase();
-  var rules = type==="income" ? INCOME_RULES : EXPENSE_RULES;
-  for(var i=0;i<rules.length;i++){
-    var kws = rules[i][1];
-    for(var j=0;j<kws.length;j++){ if(kwHit(d,kws[j])) return rules[i][0]; }
-  }
-  return type==="income" ? "ჩარიცხვები" : "სხვა";
-}
-
 /* ============ HELPERS ============ */
-function fmt(n){
-  var neg = n<0; n=Math.abs(n);
-  var s = n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-  return (neg?"-₾":"₾")+s;
-}
-function fmtShort(n){
-  var neg=n<0;n=Math.abs(n);var s;
-  if(n>=1e6)s=(n/1e6).toFixed(1)+"M";
-  else if(n>=1e3)s=(n/1e3).toFixed(1)+"K";
-  else s=n.toFixed(0);
-  return (neg?"-₾":"₾")+s;
-}
+function fmt(n){var neg=n<0;n=Math.abs(n);return (neg?"-₾":"₾")+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtShort(n){var neg=n<0;n=Math.abs(n);var s;if(n>=1e6)s=(n/1e6).toFixed(1)+"M";else if(n>=1e3)s=(n/1e3).toFixed(1)+"K";else s=n.toFixed(0);return (neg?"-₾":"₾")+s;}
 function parseAmount(v){
-  if(typeof v==="number")return v;
-  if(v==null)return NaN;
-  var s=(""+v).trim();
-  if(!s)return NaN;
+  if(typeof v==="number")return v; if(v==null)return NaN;
+  var s=(""+v).trim(); if(!s)return NaN;
   var neg=/^\(.*\)$/.test(s)||/-/.test(s);
-  // keep digits, separators
   s=s.replace(/[^\d.,-]/g,"");
-  // handle both , and . — assume last separator is decimal
   var lastC=s.lastIndexOf(","),lastD=s.lastIndexOf(".");
-  if(lastC>-1&&lastD>-1){
-    if(lastC>lastD){s=s.replace(/\./g,"").replace(",",".");}
-    else{s=s.replace(/,/g,"");}
-  } else if(lastC>-1){
-    // only commas -> if looks like thousands (groups of 3) strip, else decimal
-    if(/,\d{3}(\D|$)/.test(s) && !/,\d{1,2}$/.test(s)) s=s.replace(/,/g,"");
-    else s=s.replace(",",".");
-  }
-  s=s.replace(/(?!^)-/g,"");
-  var n=parseFloat(s);
-  if(isNaN(n))return NaN;
+  if(lastC>-1&&lastD>-1){if(lastC>lastD){s=s.replace(/\./g,"").replace(",",".");}else{s=s.replace(/,/g,"");}}
+  else if(lastC>-1){if(/,\d{3}(\D|$)/.test(s)&&!/,\d{1,2}$/.test(s))s=s.replace(/,/g,"");else s=s.replace(",",".");}
+  s=s.replace(/(?!^)-/g,""); var n=parseFloat(s); if(isNaN(n))return NaN;
   return neg&&n>0?-n:n;
 }
 function toDate(v){
-  if(v instanceof Date && !isNaN(v)) return v;
-  if(typeof v==="number"){ // excel serial
-    var d=new Date(Math.round((v-25569)*86400*1000));
-    if(!isNaN(d))return d;
-  }
-  if(typeof v==="string"){
-    var s=v.trim();
+  if(v instanceof Date&&!isNaN(v))return v;
+  if(typeof v==="number"){var d=new Date(Math.round((v-25569)*86400*1000));if(!isNaN(d))return d;}
+  if(typeof v==="string"){var s=v.trim();
     var m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/);
-    if(m){var dd=+m[1],mm=+m[2],yy=+m[3];if(yy<100)yy+=2000;
-      var dt=new Date(yy,mm-1,dd);if(!isNaN(dt))return dt;}
-    var d2=new Date(s);if(!isNaN(d2))return d2;
-  }
+    if(m){var dd=+m[1],mm=+m[2],yy=+m[3];if(yy<100)yy+=2000;var dt=new Date(yy,mm-1,dd);if(!isNaN(dt))return dt;}
+    var d2=new Date(s);if(!isNaN(d2))return d2;}
   return null;
 }
-function dateStr(d){
-  if(!d)return "—";
-  var p=function(x){return(x<10?"0":"")+x;};
-  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
-}
-function monthKey(d){
-  if(!d)return "უცნობი";
-  var p=function(x){return(x<10?"0":"")+x;};
-  return d.getFullYear()+"-"+p(d.getMonth()+1);
-}
-function toast(msg,type){
-  var t=document.getElementById("toast");
-  t.textContent=msg;t.className="show "+(type||"");
-  clearTimeout(t._t);t._t=setTimeout(function(){t.className="";},3500);
-}
+function dateStr(d){if(!d)return "—";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
+function monthKey(d){if(!d)return "უცნობი";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1);}
+function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function toast(msg,type){var t=document.getElementById("toast");t.textContent=msg;t.className="show "+(type||"");clearTimeout(t._t);t._t=setTimeout(function(){t.className="";},3500);}
 
 /* ============ IMPORT ============ */
 function triggerImport(){document.getElementById("bank-overlay").classList.add("open");}
-function pickBank(id){
-  pendingBank=id;
-  document.getElementById("bank-overlay").classList.remove("open");
-  document.getElementById("file-input").click();
-}
+function pickBank(id){pendingBank=id;document.getElementById("bank-overlay").classList.remove("open");document.getElementById("file-input").click();}
 function closeBankPicker(){document.getElementById("bank-overlay").classList.remove("open");}
-document.getElementById("file-input").addEventListener("change",function(e){
-  var f=e.target.files[0];if(f)readFile(f);e.target.value="";
-});
-// drag & drop (defaults to the currently selected bank; open picker first for correct bank)
+document.getElementById("file-input").addEventListener("change",function(e){var f=e.target.files[0];if(f)readFile(f);e.target.value="";});
 var dz=document.getElementById("dropzone");
 ["dragenter","dragover"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();dz.classList.add("drag");});});
 ["dragleave","drop"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();if(ev==="drop"){var f=e.dataTransfer.files[0];if(f)readFile(f);}dz.classList.remove("drag");});});
 
-// append new records, skipping duplicates already present (by _key)
 function addRecords(records){
   var seen={};tx.forEach(function(t){if(t._key)seen[t._key]=1;});
   var added=0,dupes=0;
-  records.forEach(function(r){
-    if(r._key&&seen[r._key]){dupes++;return;}
-    if(r._key)seen[r._key]=1;
-    tx.push(r);added++;
-  });
+  records.forEach(function(r){if(r._key&&seen[r._key]){dupes++;return;}if(r._key)seen[r._key]=1;tx.push(r);added++;});
   return {added:added,dupes:dupes};
 }
-
 function readFile(f){
   var name=f.name.toLowerCase();
   if(!/\.(xlsx|xls|csv)$/.test(name)){toast("ფორმატი არ არის მხარდაჭერილი","err");return;}
+  var importId="imp"+Date.now().toString(36);
   var r=new FileReader();
   r.onload=function(ev){
     try{
-      var data=new Uint8Array(ev.target.result);
-      var wb=XLSX.read(data,{type:"array",cellDates:true});
-
-      // ---- known bank: use profile, append directly ----
+      var wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:true});
       if(pendingBank==="bog"||pendingBank==="tbc"){
-        var res=parseBankProfile(wb,pendingBank);
+        var res=parseBankProfile(wb,pendingBank,importId);
         if(res.error){toast(res.error,"err");return;}
         if(!res.records.length){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
         var r1=addRecords(res.records);
-        save();showDashboard();render();
-        var m=BANK_PROFILES[pendingBank].name+": დაემატა "+r1.added+" ტრანზაქცია";
-        if(r1.dupes)m+=" ("+r1.dupes+" დუბლიკატი გამოტოვდა)";
-        toast(m,"ok");
+        if(r1.added>0)imports.push({id:importId,bank:BANK_PROFILES[pendingBank].name,file:f.name,ts:Date.now(),count:r1.added});
+        saveAll();showData();render();
+        var m=BANK_PROFILES[pendingBank].name+": დაემატა "+r1.added+" ტრანზაქცია";if(r1.dupes)m+=" ("+r1.dupes+" დუბლიკატი)";toast(m,"ok");
         return;
       }
-
-      // ---- generic: open mapping modal ----
       var ws=wb.Sheets[wb.SheetNames[0]];
       var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:false});
       if(!rows.length){toast("ფაილი ცარიელია","err");return;}
-      var hIdx=0;
-      for(var i=0;i<Math.min(rows.length,10);i++){
-        var nonEmpty=rows[i].filter(function(c){return (""+c).trim()!=="";}).length;
-        if(nonEmpty>=2){hIdx=i;break;}
-      }
+      var hIdx=0;for(var i=0;i<Math.min(rows.length,10);i++){if(rows[i].filter(function(c){return(""+c).trim()!=="";}).length>=2){hIdx=i;break;}}
       headers=rows[hIdx].map(function(h,i){var s=(""+h).trim();return s||("სვეტი "+(i+1));});
       rawRows=rows.slice(hIdx+1).filter(function(r){return r.some(function(c){return(""+c).trim()!=="";});});
       if(!rawRows.length){toast("მონაცემები ვერ მოიძებნა","err");return;}
+      window._pendingImportId=importId; window._pendingFile=f.name;
       openMap();
     }catch(err){console.error(err);toast("წაკითხვის შეცდომა: "+err.message,"err");}
   };
   r.readAsArrayBuffer(f);
 }
 
-/* ============ COLUMN MAPPING ============ */
-function guessCol(names,keywords){
-  for(var i=0;i<names.length;i++){
-    var n=names[i].toLowerCase();
-    for(var j=0;j<keywords.length;j++) if(n.indexOf(keywords[j])>-1)return i;
-  }
-  return -1;
-}
-function fillSelect(id,allowNone,guessIdx){
-  var sel=document.getElementById(id);sel.innerHTML="";
-  if(allowNone){var o=document.createElement("option");o.value="-1";o.textContent="— არა —";sel.appendChild(o);}
-  headers.forEach(function(h,i){var o=document.createElement("option");o.value=i;o.textContent=h;sel.appendChild(o);});
-  if(guessIdx>-1)sel.value=guessIdx; else if(allowNone)sel.value="-1";
-}
+/* ---- generic mapping ---- */
+function guessCol(names,kw){for(var i=0;i<names.length;i++){var n=names[i].toLowerCase();for(var j=0;j<kw.length;j++)if(n.indexOf(kw[j])>-1)return i;}return -1;}
+function fillSelect(id,allowNone,g){var sel=document.getElementById(id);sel.innerHTML="";if(allowNone){var o=document.createElement("option");o.value="-1";o.textContent="— არა —";sel.appendChild(o);}headers.forEach(function(h,i){var o=document.createElement("option");o.value=i;o.textContent=h;sel.appendChild(o);});if(g>-1)sel.value=g;else if(allowNone)sel.value="-1";}
 function openMap(){
-  var dateG=guessCol(headers,["თარიღ","date","დრო","time","გატარებ"]);
-  var descG=guessCol(headers,["აღწერ","დასახელ","desc","name","დანიშნ","narration","details","პროდუქ","operation","ოპერაცი"]);
-  var amtG =guessCol(headers,["თანხ","amount","sum","ღირებ","დებ","credit","debit","total","value"]);
-  var typeG=guessCol(headers,["ტიპ","type","კატ"]);
-  var catG =guessCol(headers,["კატეგორ","category","ჯგუფ","group"]);
-  fillSelect("col-date",false,dateG>-1?dateG:0);
-  fillSelect("col-desc",false,descG>-1?descG:(headers.length>1?1:0));
-  fillSelect("col-amount",false,amtG>-1?amtG:(headers.length>2?2:0));
-  fillSelect("col-type",true,typeG);
-  fillSelect("col-cat",true,catG);
-  ["col-date","col-desc","col-amount","col-type","col-cat","sign-mode"].forEach(function(id){
-    document.getElementById(id).onchange=renderPreview;
-  });
-  renderPreview();
-  document.getElementById("map-overlay").classList.add("open");
+  fillSelect("col-date",false,Math.max(0,guessCol(headers,["თარიღ","date"])));
+  fillSelect("col-desc",false,Math.max(0,guessCol(headers,["დანიშნ","აღწერ","desc","name","დასახელ"])));
+  fillSelect("col-amount",false,Math.max(0,guessCol(headers,["თანხ","amount","sum","debit","credit"])));
+  fillSelect("col-type",true,guessCol(headers,["ტიპ","type"]));
+  ["col-date","col-desc","col-amount","col-type","sign-mode"].forEach(function(id){document.getElementById(id).onchange=renderPreview;});
+  renderPreview();document.getElementById("map-overlay").classList.add("open");
 }
 function closeMap(){document.getElementById("map-overlay").classList.remove("open");}
-
-function detectType(row,ci,signMode){
+function detectType(row,ci,mode){
   var amt=parseAmount(row[ci.amount]);
-  if(signMode==="all-expense")return {type:"expense",amount:Math.abs(amt)};
-  if(signMode==="all-income")return {type:"income",amount:Math.abs(amt)};
-  if(signMode==="sign")return {type:amt<0?"expense":"income",amount:Math.abs(amt)};
-  // auto
-  if(ci.type>-1){
-    var tv=(""+row[ci.type]).toLowerCase();
-    if(/შემოს|income|credit|კრედ|in\b|დადებ|deposit|\+/.test(tv))return {type:"income",amount:Math.abs(amt)};
-    if(/ხარჯ|expense|debit|დებ|out\b|withdraw|payment|გადახდ|-/.test(tv))return {type:"expense",amount:Math.abs(amt)};
-  }
+  if(mode==="all-expense")return {type:"expense",amount:Math.abs(amt)};
+  if(mode==="all-income")return {type:"income",amount:Math.abs(amt)};
+  if(mode==="sign")return {type:amt<0?"expense":"income",amount:Math.abs(amt)};
+  if(ci.type>-1){var tv=(""+row[ci.type]).toLowerCase();
+    if(/შემოს|income|credit|კრედ|deposit/.test(tv))return {type:"income",amount:Math.abs(amt)};
+    if(/ხარჯ|expense|debit|დებ|withdraw|payment|გადახდ/.test(tv))return {type:"expense",amount:Math.abs(amt)};}
   return {type:amt<0?"expense":"income",amount:Math.abs(amt)};
 }
-
 function buildRecords(){
-  var ci={
-    date:+document.getElementById("col-date").value,
-    desc:+document.getElementById("col-desc").value,
-    amount:+document.getElementById("col-amount").value,
-    type:+document.getElementById("col-type").value,
-    cat:+document.getElementById("col-cat").value
-  };
-  var signMode=document.getElementById("sign-mode").value;
-  var out=[],skipped=0;
+  var ci={date:+document.getElementById("col-date").value,desc:+document.getElementById("col-desc").value,amount:+document.getElementById("col-amount").value,type:+document.getElementById("col-type").value};
+  var mode=document.getElementById("sign-mode").value, out=[],skipped=0;
+  var impId=window._pendingImportId||("imp"+Date.now().toString(36));
   rawRows.forEach(function(row){
-    var amtRaw=parseAmount(row[ci.amount]);
-    if(isNaN(amtRaw)){skipped++;return;}
-    var det=detectType(row,ci,signMode);
-    if(!det.amount){skipped++;return;}
-    var d=toDate(row[ci.date]);
-    var desc=(""+row[ci.desc]).trim()||"—";
-    var cat = ci.cat>-1 ? ((""+row[ci.cat]).trim()||autoCategory(desc,det.type)) : autoCategory(desc,det.type);
-    out.push({
-      id:"t"+Math.random().toString(36).slice(2,10),
-      date:d, dateStr:dateStr(d),
-      desc:desc, category:cat, type:det.type, amount:det.amount, bank:"სხვა",
-      _key:"სხვა|"+dateStr(d)+"|"+det.amount.toFixed(2)+"|"+det.type+"|"+desc
-    });
+    var amtRaw=parseAmount(row[ci.amount]); if(isNaN(amtRaw)){skipped++;return;}
+    var det=detectType(row,ci,mode); if(!det.amount){skipped++;return;}
+    var d=toDate(row[ci.date]); var desc=(""+row[ci.desc]).trim()||"—";
+    out.push({id:"t"+Math.random().toString(36).slice(2,10),date:d,dateStr:dateStr(d),desc:desc,matchText:desc,
+      category:categorize(desc,det.type),type:det.type,amount:det.amount,bank:"სხვა",importId:impId,manual:false,
+      _key:"სხვა|"+dateStr(d)+"|"+det.amount.toFixed(2)+"|"+det.type+"|"+desc});
   });
   return {records:out,skipped:skipped};
 }
-
 function renderPreview(){
-  var res=buildRecords();
-  var recs=res.records.slice(0,6);
-  var h='<table><thead><tr><th>თარიღი</th><th>აღწერა</th><th>კატეგორია</th><th>ტიპი</th><th style="text-align:right">თანხა</th></tr></thead><tbody>';
-  recs.forEach(function(r){
-    h+='<tr><td>'+r.dateStr+'</td><td>'+esc(r.desc).slice(0,40)+'</td><td>'+esc(r.category)+'</td>'+
-       '<td><span class="pill '+(r.type==="income"?"in":"out")+'">'+(r.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
-       '<td class="amt '+(r.type==="income"?"green":"red")+'">'+fmt(r.amount)+'</td></tr>';
-  });
-  h+='</tbody></table>';
-  document.getElementById("map-preview").innerHTML=h;
+  var recs=buildRecords().records.slice(0,6);
+  var h='<table><thead><tr><th>თარიღი</th><th>დანიშნულება</th><th>კატეგორია</th><th>ტიპი</th><th style="text-align:right">თანხა</th></tr></thead><tbody>';
+  recs.forEach(function(r){h+='<tr><td>'+r.dateStr+'</td><td>'+esc(r.desc).slice(0,36)+'</td><td>'+esc(r.category)+'</td><td><span class="pill '+(r.type==="income"?"in":"out")+'">'+(r.type==="income"?"შემოს.":"ხარჯი")+'</span></td><td class="amt '+(r.type==="income"?"green":"red")+'">'+fmt(r.amount)+'</td></tr>';});
+  document.getElementById("map-preview").innerHTML=h+'</tbody></table>';
 }
-function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
-
 function applyMapping(){
   var res=buildRecords();
-  if(!res.records.length){toast("ვერცერთი ვალიდური ჩანაწერი ვერ მოიძებნა — შეამოწმე თანხის სვეტი","err");return;}
+  if(!res.records.length){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
   var r1=addRecords(res.records);
-  save();
-  closeMap();
-  showDashboard();
-  render();
-  var msg="დაემატა "+r1.added+" ტრანზაქცია";
-  if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი გამოტოვდა)";
-  toast(msg,"ok");
+  if(r1.added>0)imports.push({id:window._pendingImportId,bank:"სხვა",file:window._pendingFile||"—",ts:Date.now(),count:r1.added});
+  saveAll();closeMap();showData();render();
+  var msg="დაემატა "+r1.added+" ტრანზაქცია";if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი)";toast(msg,"ok");
 }
 
 /* ============ PERSISTENCE ============ */
-function save(){
+function saveAll(){
   try{
-    var slim=tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank,_key:t._key};});
-    localStorage.setItem(STORE_KEY,JSON.stringify(slim));
-  }catch(e){console.warn("save failed",e);toast("შენახვა ვერ მოხერხდა — მონაცემები ძალიან დიდია","err");}
+    localStorage.setItem(K_TX,JSON.stringify(tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};})));
+    localStorage.setItem(K_CATS,JSON.stringify(CATS));
+    localStorage.setItem(K_IMP,JSON.stringify(imports));
+  }catch(e){console.warn(e);toast("შენახვა ვერ მოხერხდა — მონაცემები ძალიან დიდია","err");}
 }
-function load(){
+function loadAll(){
+  try{var c=JSON.parse(localStorage.getItem(K_CATS)||"null");CATS=(Array.isArray(c)&&c.length)?c:defaultCats();}catch(e){CATS=defaultCats();}
+  try{var im=JSON.parse(localStorage.getItem(K_IMP)||"[]");imports=Array.isArray(im)?im:[];}catch(e){imports=[];}
   try{
-    var raw=localStorage.getItem(STORE_KEY);if(!raw)return false;
-    var arr=JSON.parse(raw);if(!Array.isArray(arr)||!arr.length)return false;
-    tx=arr.map(function(t){
-      var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;
-      return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",_key:t._key};
-    });
+    var arr=JSON.parse(localStorage.getItem(K_TX)||"null");
+    if(!Array.isArray(arr)||!arr.length){tx=[];return false;}
+    tx=arr.map(function(t){var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText||t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",importId:t.importId,manual:!!t.manual,_key:t._key};});
     return true;
-  }catch(e){return false;}
+  }catch(e){tx=[];return false;}
 }
 function clearAll(){
-  if(!confirm("ნამდვილად წავშალო ყველა მონაცემი?"))return;
-  tx=[];localStorage.removeItem(STORE_KEY);
-  document.getElementById("dashboard").classList.add("hidden");
-  document.getElementById("dropzone").classList.remove("hidden");
-  document.getElementById("btn-clear").classList.add("hidden");
+  if(!confirm("ნამდვილად წავშალო ყველა ტრანზაქცია და იმპორტის ისტორია? (კატეგორიები დარჩება)"))return;
+  tx=[];imports=[];localStorage.removeItem(K_TX);localStorage.removeItem(K_IMP);
   Object.keys(charts).forEach(function(k){if(charts[k]){charts[k].destroy();delete charts[k];}});
-  toast("გასუფთავდა","ok");
+  showData();render();toast("გასუფთავდა","ok");
 }
-function showDashboard(){
-  document.getElementById("dropzone").classList.add("hidden");
-  document.getElementById("dashboard").classList.remove("hidden");
-  document.getElementById("btn-clear").classList.remove("hidden");
+function showData(){
+  var has=tx.length>0;
+  document.getElementById("dropzone").classList.toggle("hidden",has);
+  document.getElementById("page-"+curTab).classList.toggle("active",true);
+  document.getElementById("btn-clear").classList.toggle("hidden",!has);
+  document.getElementById("tabs").style.display=has?"":"none";
+  if(!has){document.querySelectorAll(".page").forEach(function(p){p.classList.remove("active");});}
 }
 
-/* ============ RENDER ============ */
-function render(){
-  renderKpis();
-  renderCatFilter();
-  renderBankFilter();
-  renderTable();
-  renderCharts();
+/* ============ TABS ============ */
+function showTab(name){
+  curTab=name;
+  document.querySelectorAll(".tab").forEach(function(t){t.classList.toggle("active",t.getAttribute("data-tab")===name);});
+  document.querySelectorAll(".page").forEach(function(p){p.classList.remove("active");});
+  if(tx.length)document.getElementById("page-"+name).classList.add("active");
+  if(name==="monthly")renderMonthly();
+  if(name==="categories")renderCats();
+  if(name==="history")renderHistory();
+  if(name==="dashboard")render();
 }
-function renderBankFilter(){
-  var banks={};tx.forEach(function(t){banks[t.bank||"სხვა"]=1;});
-  var sel=document.getElementById("filter-bank");if(!sel)return;
-  var cur=sel.value;
-  sel.innerHTML='<option value="">ყველა ბანკი</option>';
-  Object.keys(banks).sort().forEach(function(b){
-    var o=document.createElement("option");o.value=b;o.textContent=b;sel.appendChild(o);
-  });
+
+/* ============ RENDER (dashboard) ============ */
+function scopedTx(){return periodFilter?tx.filter(function(t){return monthKey(t.date)===periodFilter;}):tx;}
+function render(){renderPeriod();renderKpis();renderFilters();renderTable();renderCharts();}
+
+function renderPeriod(){
+  var months={};tx.forEach(function(t){months[monthKey(t.date)]=1;});
+  var sel=document.getElementById("period");var cur=periodFilter;
+  sel.innerHTML='<option value="">ყველა პერიოდი</option>';
+  Object.keys(months).filter(function(k){return k!=="უცნობი";}).sort().reverse().forEach(function(m){var o=document.createElement("option");o.value=m;o.textContent=m;sel.appendChild(o);});
+  if(months["უცნობი"]){var o=document.createElement("option");o.value="უცნობი";o.textContent="უცნობი თარიღი";sel.appendChild(o);}
   sel.value=cur;
 }
+function onPeriodChange(){periodFilter=document.getElementById("period").value;render();}
 
-function totals(){
-  var inc=0,exp=0,ci=0,ce=0;
-  tx.forEach(function(t){if(t.type==="income"){inc+=t.amount;ci++;}else{exp+=t.amount;ce++;}});
-  return {inc:inc,exp:exp,net:inc-exp,ci:ci,ce:ce};
-}
+function totals(list){var inc=0,exp=0,ci=0,ce=0;list.forEach(function(t){if(t.type==="income"){inc+=t.amount;ci++;}else{exp+=t.amount;ce++;}});return {inc:inc,exp:exp,net:inc-exp,ci:ci,ce:ce};}
 function renderKpis(){
-  var t=totals();
+  var list=scopedTx(),t=totals(list);
   document.getElementById("k-income").textContent=fmt(t.inc);
   document.getElementById("k-expense").textContent=fmt(t.exp);
   document.getElementById("k-income-sub").textContent=t.ci+" ჩანაწერი";
   document.getElementById("k-expense-sub").textContent=t.ce+" ჩანაწერი";
-  var net=document.getElementById("k-net");
-  net.textContent=fmt(t.net);
-  net.className="stat-val "+(t.net>=0?"green":"red");
+  var net=document.getElementById("k-net");net.textContent=fmt(t.net);net.className="stat-val "+(t.net>=0?"green":"red");
   var margin=t.inc>0?((t.net/t.inc)*100):0;
   document.getElementById("k-margin").textContent=(t.net>=0?"მოგება · ":"ზარალი · ")+(t.inc>0?margin.toFixed(1)+"% მარჟა":"—");
-  // period
-  var dates=tx.filter(function(t){return t.date;}).map(function(t){return t.date;}).sort(function(a,b){return a-b;});
-  if(dates.length){
-    document.getElementById("k-period").textContent=dateStr(dates[0])+" — "+dateStr(dates[dates.length-1]);
-  }else document.getElementById("k-period").textContent="თარიღები არ არის";
-  document.getElementById("k-count").textContent=tx.length+" ტრანზაქცია";
+  var dates=list.filter(function(t){return t.date;}).map(function(t){return t.date;}).sort(function(a,b){return a-b;});
+  document.getElementById("k-period").textContent=dates.length?(dateStr(dates[0])+" — "+dateStr(dates[dates.length-1])):"—";
+  document.getElementById("k-count").textContent=list.length+" ტრანზაქცია";
 }
-
-function renderCatFilter(){
-  var cats={};tx.forEach(function(t){cats[t.category]=1;});
-  var sel=document.getElementById("filter-cat");
-  var cur=sel.value;
-  sel.innerHTML='<option value="">ყველა კატეგორია</option>';
-  Object.keys(cats).sort().forEach(function(c){
-    var o=document.createElement("option");o.value=c;o.textContent=c;sel.appendChild(o);
-  });
-  sel.value=cur;
+function renderFilters(){
+  var cats={},banks={};tx.forEach(function(t){cats[t.category]=1;banks[t.bank||"სხვა"]=1;});
+  var sc=document.getElementById("filter-cat"),cur=sc.value;sc.innerHTML='<option value="">ყველა კატეგორია</option>';
+  Object.keys(cats).sort().forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;sc.appendChild(o);});sc.value=cur;
+  var sb=document.getElementById("filter-bank"),curb=sb.value;sb.innerHTML='<option value="">ყველა ბანკი</option>';
+  Object.keys(banks).sort().forEach(function(b){var o=document.createElement("option");o.value=b;o.textContent=b;sb.appendChild(o);});sb.value=curb;
 }
-
 function filteredTx(){
-  var q=document.getElementById("search").value.toLowerCase().trim();
-  var ft=document.getElementById("filter-type").value;
-  var fc=document.getElementById("filter-cat").value;
-  var fb=document.getElementById("filter-bank").value;
-  var list=tx.filter(function(t){
+  var q=norm(document.getElementById("search").value),ft=document.getElementById("filter-type").value,fc=document.getElementById("filter-cat").value,fb=document.getElementById("filter-bank").value;
+  var list=scopedTx().filter(function(t){
     if(ft&&t.type!==ft)return false;
     if(fc&&t.category!==fc)return false;
     if(fb&&(t.bank||"სხვა")!==fb)return false;
-    if(q&&t.desc.toLowerCase().indexOf(q)===-1&&t.category.toLowerCase().indexOf(q)===-1)return false;
+    if(q&&norm(t.desc).indexOf(q)===-1&&norm(t.category).indexOf(q)===-1)return false;
     return true;
   });
-  list.sort(function(a,b){
-    var av,bv;
+  list.sort(function(a,b){var av,bv;
     if(sortKey==="date"){av=a.date?a.date.getTime():0;bv=b.date?b.date.getTime():0;}
     else if(sortKey==="amount"){av=a.amount;bv=b.amount;}
-    else{av=(a[sortKey]||"").toLowerCase();bv=(b[sortKey]||"").toLowerCase();}
-    if(av<bv)return -1*sortDir;if(av>bv)return 1*sortDir;return 0;
-  });
+    else{av=norm(a[sortKey]);bv=norm(b[sortKey]);}
+    if(av<bv)return -1*sortDir;if(av>bv)return 1*sortDir;return 0;});
   return list;
 }
 function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"||k==="amount")?-1:1;}renderTable();}
-
 function renderTable(){
-  renderCatFilter();
-  renderBankFilter();
-  var list=filteredTx();
-  var tb=document.getElementById("tbody");
-  if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';
-    document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
-  var opts=CATEGORIES.slice();
-  tx.forEach(function(t){if(opts.indexOf(t.category)===-1)opts.push(t.category);});
-  // cap rendered rows for performance on large statements
-  var MAX=1000, shown=list.slice(0,MAX);
-  var h="",sum=0;
+  renderFilters();
+  var list=filteredTx(),tb=document.getElementById("tbody");
+  if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
+  var opts=catNames();
+  var MAX=800,shown=list.slice(0,MAX),h="",sum=0;
   list.forEach(function(t){sum+=t.type==="income"?t.amount:-t.amount;});
   shown.forEach(function(t){
     var sel='<select onchange="changeCat(\''+t.id+'\',this.value)">';
-    opts.forEach(function(c){sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
+    var found=false;opts.forEach(function(c){if(c===t.category)found=true;sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
+    if(!found)sel='<select onchange="changeCat(\''+t.id+'\',this.value)"><option selected>'+esc(t.category)+'</option>'+sel.slice(sel.indexOf('>')+1);
     sel+='</select>';
-    h+='<tr><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,60)+'</td>'+
-       '<td>'+sel+'</td>'+
+    h+='<tr><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,52)+'</td><td>'+sel+'</td>'+
        '<td><span class="pill bank">'+esc(t.bank||"სხვა")+'</span></td>'+
        '<td><span class="pill '+(t.type==="income"?"in":"out")+'">'+(t.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
        '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
   });
   tb.innerHTML=h;
-  var info=list.length+" / "+tx.length+" ჩანაწერი";
-  if(list.length>MAX)info+=" (ნაჩვენებია პირველი "+MAX+")";
+  var info=list.length+" / "+tx.length+" ჩანაწერი";if(list.length>MAX)info+=" (ნაჩვენებია "+MAX+")";
   document.getElementById("tbl-info").textContent=info;
   document.getElementById("tbl-sum").textContent="ბალანსი: "+fmt(sum);
 }
-function changeCat(id,val){
-  var t=tx.find(function(x){return x.id===id;});
-  if(t){t.category=val;save();renderKpis();renderCharts();renderCatFilter();}
+function changeCat(id,val){var t=tx.find(function(x){return x.id===id;});if(t){t.category=val;t.manual=true;saveAll();renderKpis();renderCharts();}}
+
+/* ============ MONTHLY ============ */
+function renderMonthly(){
+  var m={};tx.forEach(function(t){var k=monthKey(t.date);if(!m[k])m[k]={inc:0,exp:0,n:0};m[k].n++;if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;});
+  var keys=Object.keys(m).filter(function(k){return k!=="უცნობი";}).sort().reverse();
+  if(m["უცნობი"])keys.push("უცნობი");
+  var tb=document.getElementById("monthly-body");
+  if(!keys.length){tb.innerHTML='<tr><td colspan="6" class="empty">მონაცემები არ არის</td></tr>';return;}
+  var h="";
+  keys.forEach(function(k){var x=m[k],net=x.inc-x.exp;
+    h+='<tr class="clickable" onclick="gotoMonth(\''+k+'\')"><td class="mono">'+k+'</td><td style="text-align:right">'+x.n+'</td>'+
+       '<td class="amt green">'+fmt(x.inc)+'</td><td class="amt red">'+fmt(x.exp)+'</td>'+
+       '<td class="amt '+(net>=0?"green":"red")+'">'+fmt(net)+'</td><td style="text-align:right;color:var(--text3)">›</td></tr>';
+  });
+  tb.innerHTML=h;
+}
+function gotoMonth(k){periodFilter=k;showTab("dashboard");}
+
+/* ============ CATEGORIES UI ============ */
+var CAT_COLORS={};
+function catColor(name){if(!CAT_COLORS[name]){var idx=Object.keys(CAT_COLORS).length;CAT_COLORS[name]=PALETTE[idx%PALETTE.length];}return CAT_COLORS[name];}
+function renderCats(){
+  var wrap=document.getElementById("cat-list"),h="";
+  CATS.forEach(function(c,i){
+    var tcls=c.type==="income"?"income":(c.type==="expense"?"expense":"");
+    var tlbl=c.type==="income"?"შემოსავალი":(c.type==="expense"?"ხარჯი":"ნებისმიერი");
+    h+='<div class="cat-card"><div class="cat-card-head">'+
+       '<div class="cat-name"><span class="cat-dot" style="background:'+catColor(c.name)+'"></span>'+esc(c.name)+'</div>'+
+       '<select class="cat-type '+tcls+'" style="width:auto" onchange="changeCatType('+i+',this.value)">'+
+         '<option value="any"'+(c.type==="any"?" selected":"")+'>ნებისმიერი</option>'+
+         '<option value="income"'+(c.type==="income"?" selected":"")+'>შემოსავალი</option>'+
+         '<option value="expense"'+(c.type==="expense"?" selected":"")+'>ხარჯი</option>'+
+       '</select>'+
+       '<button class="cat-del" title="წაშლა" onclick="delCategory('+i+')">🗑</button></div>';
+    h+='<div class="chips">';
+    if(!c.keywords.length)h+='<span class="chip none">საკვანძო სიტყვები არ არის</span>';
+    c.keywords.forEach(function(kw,j){h+='<span class="chip">'+esc(kw)+'<b onclick="delKeyword('+i+','+j+')">×</b></span>';});
+    h+='</div><div class="kw-add"><input type="text" placeholder="დაამატე სიტყვა/ფრაზა..." onkeydown="if(event.key===\'Enter\'){addKeyword('+i+',this.value);this.value=\'\';}"><button class="btn btn-sm" onclick="var inp=this.previousElementSibling;addKeyword('+i+',inp.value);inp.value=\'\';">＋</button></div>';
+    h+='</div>';
+  });
+  wrap.innerHTML=h;
+}
+function addCategory(){
+  var name=document.getElementById("new-cat-name").value.trim();var type=document.getElementById("new-cat-type").value;
+  if(!name){toast("ჩაწერე კატეგორიის სახელი","err");return;}
+  if(CATS.some(function(c){return c.name===name;})){toast("ასეთი კატეგორია უკვე არსებობს","err");return;}
+  CATS.splice(Math.max(0,CATS.length-1),0,{name:name,type:type,keywords:[]}); // insert before "სხვა"
+  document.getElementById("new-cat-name").value="";saveAll();renderCats();toast("დაემატა: "+name,"ok");
+}
+function delCategory(i){
+  var c=CATS[i];if(!c)return;
+  if(!confirm('წავშალო კატეგორია „'+c.name+'"? ამ კატეგორიის ტრანზაქციები გადავა „'+DEFAULT_CAT+'"-ში.'))return;
+  tx.forEach(function(t){if(t.category===c.name){t.category=DEFAULT_CAT;}});
+  CATS.splice(i,1);saveAll();renderCats();render();toast("წაიშალა","ok");
+}
+function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;saveAll();renderCats();}}
+function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(CATS[i].keywords.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].keywords.push(val);saveAll();renderCats();}
+function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);saveAll();renderCats();}}
+function recategorize(){
+  var n=0;tx.forEach(function(t){if(t.manual)return;var nc=categorize(t.matchText||t.desc,t.type);if(nc!==t.category){t.category=nc;n++;}});
+  saveAll();render();toast("ხელახლა დაკატეგორდა "+n+" ტრანზაქცია (ხელით შეცვლილები ხელუხლებელია)","ok");
+}
+
+/* ============ HISTORY ============ */
+function renderHistory(){
+  var tb=document.getElementById("history-body");
+  if(!imports.length){tb.innerHTML='<tr><td colspan="5" class="empty">იმპორტები არ არის</td></tr>';return;}
+  var h="";imports.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(im){
+    var d=new Date(im.ts);var p=function(x){return(x<10?"0":"")+x;};
+    var ds=d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());
+    h+='<tr><td class="mono">'+ds+'</td><td><span class="pill bank">'+esc(im.bank)+'</span></td><td title="'+esc(im.file)+'">'+esc(im.file).slice(0,40)+'</td><td style="text-align:right">'+im.count+'</td>'+
+       '<td style="text-align:right"><button class="btn btn-sm btn-danger" onclick="delImport(\''+im.id+'\')">წაშლა</button></td></tr>';
+  });
+  tb.innerHTML=h;
+}
+function delImport(id){
+  var im=imports.find(function(x){return x.id===id;});if(!im)return;
+  if(!confirm('წავშალო ეს იმპორტი ('+im.file+') და მისი '+im.count+' ტრანზაქცია?'))return;
+  tx=tx.filter(function(t){return t.importId!==id;});
+  imports=imports.filter(function(x){return x.id!==id;});
+  saveAll();showData();renderHistory();if(!tx.length){document.querySelectorAll(".page").forEach(function(p){p.classList.remove("active");});}
+  toast("იმპორტი წაიშალა","ok");
 }
 
 /* ============ CHARTS ============ */
 var C_GRID="#1a2430",C_TEXT="#7a9ab5";
-var PALETTE=["#00d4a0","#4090ff","#a060ff","#ffa040","#ff4560","#40e0e0","#ff60c0","#00ff94","#8090b0","#ffd040","#60a0ff","#ff8060"];
-Chart.defaults.color=C_TEXT;
-Chart.defaults.font.family="'Space Mono',monospace";
-Chart.defaults.font.size=11;
-
+var PALETTE=["#00d4a0","#4090ff","#a060ff","#ffa040","#ff4560","#40e0e0","#ff60c0","#00ff94","#8090b0","#ffd040","#60a0ff","#ff8060","#c0a0ff","#40ffc0","#ff90a0","#a0d040","#d0d0d0","#ff6040","#6070ff"];
+Chart.defaults.color=C_TEXT;Chart.defaults.font.family="'Space Mono',monospace";Chart.defaults.font.size=11;
 function destroyChart(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
-
-function monthlyData(){
-  var m={};
-  tx.forEach(function(t){
-    var k=monthKey(t.date);
-    if(!m[k])m[k]={inc:0,exp:0};
-    if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;
-  });
-  var keys=Object.keys(m).sort();
-  // push "უცნობი" to end
-  keys=keys.filter(function(k){return k!=="უცნობი";}).concat(keys.indexOf("უცნობი")>-1?["უცნობი"]:[]);
+function monthlyData(list){
+  var m={};list.forEach(function(t){var k=monthKey(t.date);if(!m[k])m[k]={inc:0,exp:0};if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;});
+  var keys=Object.keys(m).filter(function(k){return k!=="უცნობი";}).sort();if(m["უცნობი"])keys.push("უცნობი");
   return {keys:keys,m:m};
 }
-function catData(type){
-  var c={};tx.forEach(function(t){if(t.type===type)c[t.category]=(c[t.category]||0)+t.amount;});
-  var arr=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];});
-  return {labels:arr.map(function(a){return a[0];}),vals:arr.map(function(a){return a[1];})};
-}
-
+function catData(list,type){var c={};list.forEach(function(t){if(t.type===type)c[t.category]=(c[t.category]||0)+t.amount;});var arr=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];});return {labels:arr.map(function(a){return a[0];}),vals:arr.map(function(a){return a[1];}),colors:arr.map(function(a){return catColor(a[0]);})};}
 function renderCharts(){
-  var md=monthlyData();
-  // P&L bar
+  var list=scopedTx();
+  var md=monthlyData(list);
   destroyChart("pnl");
-  charts.pnl=new Chart(document.getElementById("chart-pnl"),{
-    type:"bar",
-    data:{labels:md.keys,datasets:[
-      {label:"შემოსავალი",data:md.keys.map(function(k){return md.m[k].inc;}),backgroundColor:"#00d4a0cc",borderRadius:4},
-      {label:"ხარჯი",data:md.keys.map(function(k){return md.m[k].exp;}),backgroundColor:"#ff4560cc",borderRadius:4},
-      {label:"ნეტო",type:"line",data:md.keys.map(function(k){return md.m[k].inc-md.m[k].exp;}),borderColor:"#4090ff",backgroundColor:"#4090ff",tension:.3,borderWidth:2,pointRadius:3,fill:false}
-    ]},
-    options:baseOpts(true)
-  });
-  // income vs expense doughnut
-  var t=totals();
+  charts.pnl=new Chart(document.getElementById("chart-pnl"),{type:"bar",data:{labels:md.keys,datasets:[
+    {label:"შემოსავალი",data:md.keys.map(function(k){return md.m[k].inc;}),backgroundColor:"#00d4a0cc",borderRadius:4},
+    {label:"ხარჯი",data:md.keys.map(function(k){return md.m[k].exp;}),backgroundColor:"#ff4560cc",borderRadius:4},
+    {label:"ნეტო",type:"line",data:md.keys.map(function(k){return md.m[k].inc-md.m[k].exp;}),borderColor:"#4090ff",backgroundColor:"#4090ff",tension:.3,borderWidth:2,pointRadius:3,fill:false}
+  ]},options:baseOpts()});
+  var t=totals(list);
   destroyChart("io");
-  charts.io=new Chart(document.getElementById("chart-io"),{
-    type:"doughnut",
-    data:{labels:["შემოსავალი","ხარჯი"],datasets:[{data:[t.inc,t.exp],backgroundColor:["#00d4a0","#ff4560"],borderColor:"#0d1318",borderWidth:2}]},
-    options:doughnutOpts()
-  });
-  // category expense
-  var ce=catData("expense");
+  charts.io=new Chart(document.getElementById("chart-io"),{type:"doughnut",data:{labels:["შემოსავალი","ხარჯი"],datasets:[{data:[t.inc,t.exp],backgroundColor:["#00d4a0","#ff4560"],borderColor:"#0d1318",borderWidth:2}]},options:doughnutOpts()});
+  var ce=catData(list,"expense");
   destroyChart("catExp");
-  charts.catExp=new Chart(document.getElementById("chart-cat-exp"),{
-    type:"doughnut",
-    data:{labels:ce.labels,datasets:[{data:ce.vals,backgroundColor:PALETTE,borderColor:"#0d1318",borderWidth:2}]},
-    options:doughnutOpts()
-  });
-  // category income
-  var cinc=catData("income");
+  charts.catExp=new Chart(document.getElementById("chart-cat-exp"),{type:"doughnut",data:{labels:ce.labels,datasets:[{data:ce.vals,backgroundColor:ce.colors,borderColor:"#0d1318",borderWidth:2}]},options:doughnutOpts()});
+  var cinc=catData(list,"income");
   destroyChart("catInc");
-  charts.catInc=new Chart(document.getElementById("chart-cat-inc"),{
-    type:"doughnut",
-    data:{labels:cinc.labels,datasets:[{data:cinc.vals,backgroundColor:PALETTE.slice().reverse(),borderColor:"#0d1318",borderWidth:2}]},
-    options:doughnutOpts()
-  });
-  // cumulative balance
-  var dated=tx.filter(function(t){return t.date;}).sort(function(a,b){return a.date-b.date;});
-  var run=0,labels=[],data=[];
-  dated.forEach(function(t){run+=t.type==="income"?t.amount:-t.amount;labels.push(t.dateStr);data.push(run);});
+  charts.catInc=new Chart(document.getElementById("chart-cat-inc"),{type:"doughnut",data:{labels:cinc.labels,datasets:[{data:cinc.vals,backgroundColor:cinc.colors,borderColor:"#0d1318",borderWidth:2}]},options:doughnutOpts()});
+  var dated=list.filter(function(t){return t.date;}).slice().sort(function(a,b){return a.date-b.date;});
+  var run=0,labels=[],data=[];dated.forEach(function(t){run+=t.type==="income"?t.amount:-t.amount;labels.push(t.dateStr);data.push(run);});
   destroyChart("cum");
-  charts.cum=new Chart(document.getElementById("chart-cum"),{
-    type:"line",
-    data:{labels:labels,datasets:[{label:"ბალანსი",data:data,borderColor:"#00d4a0",backgroundColor:"#00d4a022",tension:.25,borderWidth:2,pointRadius:0,fill:true}]},
-    options:baseOpts(false)
-  });
+  charts.cum=new Chart(document.getElementById("chart-cum"),{type:"line",data:{labels:labels,datasets:[{label:"ბალანსი",data:data,borderColor:"#00d4a0",backgroundColor:"#00d4a022",tension:.25,borderWidth:2,pointRadius:0,fill:true}]},options:baseOpts()});
 }
-function baseOpts(stacked){
-  return {
-    responsive:true,maintainAspectRatio:false,
-    interaction:{mode:"index",intersect:false},
-    plugins:{
-      legend:{labels:{boxWidth:12,padding:12}},
-      tooltip:{callbacks:{label:function(c){return c.dataset.label+": "+fmt(c.parsed.y);}}}
-    },
-    scales:{
-      x:{grid:{color:C_GRID},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
-      y:{grid:{color:C_GRID},ticks:{callback:function(v){return fmtShort(v);}}}
-    }
-  };
-}
-function doughnutOpts(){
-  return {
-    responsive:true,maintainAspectRatio:false,cutout:"58%",
-    plugins:{
-      legend:{position:"right",labels:{boxWidth:11,padding:8,font:{size:11}}},
-      tooltip:{callbacks:{label:function(c){
-        var tot=c.dataset.data.reduce(function(a,b){return a+b;},0);
-        var pct=tot?((c.parsed/tot)*100).toFixed(1):0;
-        return c.label+": "+fmt(c.parsed)+" ("+pct+"%)";
-      }}}
-    }
-  };
-}
+function baseOpts(){return {responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{legend:{labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{label:function(c){return c.dataset.label+": "+fmt(c.parsed.y);}}}},scales:{x:{grid:{color:C_GRID},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:C_GRID},ticks:{callback:function(v){return fmtShort(v);}}}}};}
+function doughnutOpts(){return {responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{position:"right",labels:{boxWidth:11,padding:7,font:{size:10}}},tooltip:{callbacks:{label:function(c){var tot=c.dataset.data.reduce(function(a,b){return a+b;},0);var pct=tot?((c.parsed/tot)*100).toFixed(1):0;return c.label+": "+fmt(c.parsed)+" ("+pct+"%)";}}}}};}
 
 /* ============ EXPORT ============ */
 function exportCsv(){
-  var list=filteredTx();
-  if(!list.length){toast("ექსპორტისთვის ჩანაწერი არ არის","err");return;}
-  var rows=[["თარიღი","აღწერა","კატეგორია","ბანკი","ტიპი","თანხა"]];
+  var list=filteredTx();if(!list.length){toast("ექსპორტისთვის ჩანაწერი არ არის","err");return;}
+  var rows=[["თარიღი","დანიშნულება","კატეგორია","ბანკი","ტიპი","თანხა"]];
   list.forEach(function(t){rows.push([t.dateStr,t.desc,t.category,t.bank||"სხვა",t.type==="income"?"შემოსავალი":"ხარჯი",(t.type==="income"?"":"-")+t.amount]);});
   var csv="﻿"+rows.map(function(r){return r.map(function(c){var s=""+c;return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",");}).join("\n");
-  var blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="finance-export.csv";a.click();
+  var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="finance-export.csv";a.click();
   setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
 }
 
 /* ============ INIT ============ */
-if(load()){showDashboard();render();}
+(function init(){
+  var has=loadAll();
+  showData();
+  if(has){showTab("dashboard");}
+})();
 </script>
 </body>
 </html>
