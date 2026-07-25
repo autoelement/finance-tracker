@@ -157,7 +157,6 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
   <div class="logo">₾<span>/</span>FIN</div>
   <div class="h-spacer"></div>
   <button class="btn btn-sm" id="btn-import" onclick="triggerImport()">＋ იმპორტი</button>
-  <button class="btn btn-sm btn-danger hidden" id="btn-clear" onclick="clearAll()">🗑 ყველაფრის წაშლა</button>
   <input type="file" id="file-input" accept=".xlsx,.xls,.csv" class="hidden">
 </header>
 
@@ -545,6 +544,7 @@ function saveAll(){
 }
 function loadAll(){
   try{var c=JSON.parse(localStorage.getItem(K_CATS)||"null");CATS=(Array.isArray(c)&&c.length)?c:defaultCats();}catch(e){CATS=defaultCats();}
+  CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!c.type)c.type="any";});
   try{var im=JSON.parse(localStorage.getItem(K_IMP)||"[]");imports=Array.isArray(im)?im:[];}catch(e){imports=[];}
   try{
     var arr=JSON.parse(localStorage.getItem(K_TX)||"null");
@@ -553,14 +553,7 @@ function loadAll(){
     return true;
   }catch(e){tx=[];return false;}
 }
-function clearAll(){
-  if(!confirm("ნამდვილად წავშალო ყველა ტრანზაქცია და იმპორტის ისტორია? (კატეგორიები დარჩება)"))return;
-  tx=[];imports=[];localStorage.removeItem(K_TX);localStorage.removeItem(K_IMP);
-  Object.keys(charts).forEach(function(k){if(charts[k]){charts[k].destroy();delete charts[k];}});
-  showData();showTab(curTab);toast("გასუფთავდა","ok");
-}
 function showData(){
-  document.getElementById("btn-clear").classList.toggle("hidden",tx.length===0);
   document.getElementById("tabs").style.display="";
   applyTabView();
 }
@@ -587,6 +580,8 @@ function showTab(name){
 
 /* ============ RENDER (dashboard) ============ */
 function scopedTx(){return periodFilter?tx.filter(function(t){return monthKey(t.date)===periodFilter;}):tx;}
+function catIncluded(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)return CATS[i].include!==false;return true;}
+function accounted(list){return list.filter(function(t){return catIncluded(t.category);});}
 function render(){renderPeriod();renderKpis();renderFilters();renderTable();renderCharts();}
 
 function renderPeriod(){
@@ -601,7 +596,7 @@ function onPeriodChange(){periodFilter=document.getElementById("period").value;r
 
 function totals(list){var inc=0,exp=0,ci=0,ce=0;list.forEach(function(t){if(t.type==="income"){inc+=t.amount;ci++;}else{exp+=t.amount;ce++;}});return {inc:inc,exp:exp,net:inc-exp,ci:ci,ce:ce};}
 function renderKpis(){
-  var list=scopedTx(),t=totals(list);
+  var list=accounted(scopedTx()),t=totals(list);
   document.getElementById("k-income").textContent=fmt(t.inc);
   document.getElementById("k-expense").textContent=fmt(t.exp);
   document.getElementById("k-income-sub").textContent=t.ci+" ჩანაწერი";
@@ -643,13 +638,15 @@ function renderTable(){
   if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
   var opts=catNames();
   var MAX=800,shown=list.slice(0,MAX),h="",sum=0;
-  list.forEach(function(t){sum+=t.type==="income"?t.amount:-t.amount;});
+  list.forEach(function(t){if(catIncluded(t.category))sum+=t.type==="income"?t.amount:-t.amount;});
   shown.forEach(function(t){
+    var excl=!catIncluded(t.category);
     var sel='<select onchange="changeCat(\''+t.id+'\',this.value)">';
     var found=false;opts.forEach(function(c){if(c===t.category)found=true;sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
     if(!found)sel='<select onchange="changeCat(\''+t.id+'\',this.value)"><option selected>'+esc(t.category)+'</option>'+sel.slice(sel.indexOf('>')+1);
     sel+='</select>';
-    h+='<tr><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,52)+'</td><td>'+sel+'</td>'+
+    var badge=excl?' <span class="pill" style="background:var(--amber-dim);color:var(--amber)">არ ითვლება</span>':'';
+    h+='<tr'+(excl?' style="opacity:.5"':'')+'><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,52)+'</td><td>'+sel+badge+'</td>'+
        '<td><span class="pill bank">'+esc(t.bank||"სხვა")+'</span></td>'+
        '<td><span class="pill '+(t.type==="income"?"in":"out")+'">'+(t.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
        '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
@@ -663,7 +660,7 @@ function changeCat(id,val){var t=tx.find(function(x){return x.id===id;});if(t){t
 
 /* ============ MONTHLY ============ */
 function renderMonthly(){
-  var m={};tx.forEach(function(t){var k=monthKey(t.date);if(!m[k])m[k]={inc:0,exp:0,n:0};m[k].n++;if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;});
+  var m={};accounted(tx).forEach(function(t){var k=monthKey(t.date);if(!m[k])m[k]={inc:0,exp:0,n:0};m[k].n++;if(t.type==="income")m[k].inc+=t.amount;else m[k].exp+=t.amount;});
   var keys=Object.keys(m).filter(function(k){return k!=="უცნობი";}).sort().reverse();
   if(m["უცნობი"])keys.push("უცნობი");
   var tb=document.getElementById("monthly-body");
@@ -686,14 +683,17 @@ function renderCats(){
   CATS.forEach(function(c,i){
     var tcls=c.type==="income"?"income":(c.type==="expense"?"expense":"");
     var tlbl=c.type==="income"?"შემოსავალი":(c.type==="expense"?"ხარჯი":"ნებისმიერი");
-    h+='<div class="cat-card"><div class="cat-card-head">'+
+    var incl=c.include!==false;
+    h+='<div class="cat-card"'+(incl?"":' style="opacity:.55"')+'><div class="cat-card-head">'+
        '<div class="cat-name"><span class="cat-dot" style="background:'+catColor(c.name)+'"></span>'+esc(c.name)+'</div>'+
        '<select class="cat-type '+tcls+'" style="width:auto" onchange="changeCatType('+i+',this.value)">'+
          '<option value="any"'+(c.type==="any"?" selected":"")+'>ნებისმიერი</option>'+
          '<option value="income"'+(c.type==="income"?" selected":"")+'>შემოსავალი</option>'+
          '<option value="expense"'+(c.type==="expense"?" selected":"")+'>ხარჯი</option>'+
        '</select>'+
-       '<button class="cat-del" title="წაშლა" onclick="delCategory('+i+')">🗑</button></div>';
+       '<button class="cat-del" title="წაშლა" onclick="delCategory('+i+')">🗑</button></div>'+
+       '<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:10px">'+
+         '<input type="checkbox"'+(incl?" checked":"")+' onchange="toggleInclude('+i+',this.checked)" style="width:auto"> ითვლება ფინანსურ ანგარიშებში</label>';
     h+='<div class="chips">';
     if(!c.keywords.length)h+='<span class="chip none">საკვანძო სიტყვები არ არის</span>';
     c.keywords.forEach(function(kw,j){h+='<span class="chip">'+esc(kw)+'<b onclick="delKeyword('+i+','+j+')">×</b></span>';});
@@ -716,6 +716,7 @@ function delCategory(i){
   CATS.splice(i,1);saveAll();renderCats();render();toast("წაიშალა","ok");
 }
 function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;saveAll();renderCats();}}
+function toggleInclude(i,v){if(CATS[i]){CATS[i].include=v;saveAll();renderCats();if(tx.length)render();}}
 function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(CATS[i].keywords.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].keywords.push(val);saveAll();renderCats();}
 function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);saveAll();renderCats();}}
 function recategorize(){
@@ -731,7 +732,8 @@ function renderHistory(){
     var d=new Date(im.ts);var p=function(x){return(x<10?"0":"")+x;};
     var ds=d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());
     h+='<tr><td class="mono">'+ds+'</td><td><span class="pill bank">'+esc(im.bank)+'</span></td><td title="'+esc(im.file)+'">'+esc(im.file).slice(0,40)+'</td><td style="text-align:right">'+im.count+'</td>'+
-       '<td style="text-align:right"><button class="btn btn-sm btn-danger" onclick="delImport(\''+im.id+'\')">წაშლა</button></td></tr>';
+       '<td style="text-align:right;white-space:nowrap"><button class="btn btn-sm" onclick="replaceImport(\''+im.id+'\')">ჩანაცვლება</button> '+
+       '<button class="btn btn-sm btn-danger" onclick="delImport(\''+im.id+'\')">წაშლა</button></td></tr>';
   });
   tb.innerHTML=h;
 }
@@ -742,6 +744,15 @@ function delImport(id){
   imports=imports.filter(function(x){return x.id!==id;});
   saveAll();showData();showTab("history");
   toast("იმპორტი წაიშალა","ok");
+}
+function replaceImport(id){
+  var im=imports.find(function(x){return x.id===id;});if(!im)return;
+  if(!confirm('ჩავანაცვლო ეს იმპორტი? ძველი '+im.count+' ჩანაწერი წაიშლება და ატვირთავ ახალ ფაილს ('+im.bank+').'))return;
+  tx=tx.filter(function(t){return t.importId!==id;});
+  imports=imports.filter(function(x){return x.id!==id;});
+  saveAll();
+  pendingBank = im.bank==="BOG"?"bog":(im.bank==="TBC"?"tbc":"other");
+  document.getElementById("file-input").click();
 }
 
 /* ============ CHARTS ============ */
@@ -756,7 +767,7 @@ function monthlyData(list){
 }
 function catData(list,type){var c={};list.forEach(function(t){if(t.type===type)c[t.category]=(c[t.category]||0)+t.amount;});var arr=Object.keys(c).map(function(k){return [k,c[k]];}).sort(function(a,b){return b[1]-a[1];});return {labels:arr.map(function(a){return a[0];}),vals:arr.map(function(a){return a[1];}),colors:arr.map(function(a){return catColor(a[0]);})};}
 function renderCharts(){
-  var list=scopedTx();
+  var list=accounted(scopedTx());
   var md=monthlyData(list);
   destroyChart("pnl");
   charts.pnl=new Chart(document.getElementById("chart-pnl"),{type:"bar",data:{labels:md.keys,datasets:[
