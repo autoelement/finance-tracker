@@ -97,6 +97,15 @@ td.amt{font-family:'Space Mono',monospace;font-weight:700;text-align:right}
 .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 .pill.in{background:var(--green-dim);color:var(--green)}
 .pill.out{background:var(--red-dim);color:var(--red)}
+.pill.bank{background:var(--bg3);color:var(--text2);border:1px solid var(--border2)}
+
+/* BANK PICKER */
+.bank-opts{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px}
+.bank-opt{display:flex;align-items:center;gap:14px;padding:16px 18px;border:1px solid var(--border2);background:var(--bg3);border-radius:12px;cursor:pointer;transition:all .18s;text-align:left;width:100%;color:var(--text)}
+.bank-opt:hover{border-color:var(--green);background:var(--green-dim)}
+.bank-opt .bo-ico{font-size:26px}
+.bank-opt .bo-tit{font-size:15px;font-weight:600}
+.bank-opt .bo-sub{font-size:12px;color:var(--text3);margin-top:2px}
 td select{padding:5px 8px;font-size:12px;min-width:130px}
 .empty{text-align:center;padding:40px;color:var(--text3)}
 .tbl-foot{padding:12px 16px;color:var(--text3);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
@@ -132,8 +141,8 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
   <!-- EMPTY / DROPZONE -->
   <div id="dropzone" class="dropzone" onclick="triggerImport()">
     <div class="dz-ico">📊</div>
-    <h2>ატვირთე Excel ფაილი</h2>
-    <p>გადმოაგდე ან დააჭირე ასატვირთად. სისტემა ავტომატურად დაარისხებს ტრანზაქციებს ხარჯებად და შემოსავლებად, დაითვლის მოგება/ზარალს და დახატავს გრაფიკებს.</p>
+    <h2>ატვირთე ბანკის ამონაწერი</h2>
+    <p>დააჭირე, აირჩიე ბანკი (საქართველოს ბანკი / თიბისი / სხვა) და ატვირთე Excel. სისტემა ავტომატურად დაარისხებს ხარჯებად და შემოსავლებად, დაითვლის მოგება/ზარალს და დახატავს გრაფიკებს. ორივე ბანკის ატვირთვისას მონაცემები გაერთიანდება.</p>
     <div class="fmt">მხარდაჭერილი ფორმატები: .xlsx · .xls · .csv</div>
   </div>
 
@@ -181,6 +190,7 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
           <option value="expense">ხარჯი</option>
         </select>
         <select id="filter-cat" onchange="renderTable()"><option value="">ყველა კატეგორია</option></select>
+        <select id="filter-bank" onchange="renderTable()"><option value="">ყველა ბანკი</option></select>
         <div class="h-spacer" style="flex:1"></div>
         <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV ექსპორტი</button>
       </div>
@@ -191,6 +201,7 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
               <th onclick="sortBy('date')">თარიღი</th>
               <th onclick="sortBy('desc')">აღწერა</th>
               <th onclick="sortBy('category')">კატეგორია</th>
+              <th onclick="sortBy('bank')">ბანკი</th>
               <th onclick="sortBy('type')">ტიპი</th>
               <th onclick="sortBy('amount')" style="text-align:right">თანხა</th>
             </tr>
@@ -202,6 +213,31 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
         <span id="tbl-info">—</span>
         <span id="tbl-sum" class="mono"></span>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- BANK PICKER MODAL -->
+<div class="overlay" id="bank-overlay">
+  <div class="modal" style="max-width:460px">
+    <h2>აირჩიე ბანკი</h2>
+    <div class="sub">რომელი ბანკის ამონაწერს ტვირთავ? სისტემა ავტომატურად ამოიცნობს სტრუქტურას. რამდენიმე ფაილის ატვირთვისას მონაცემები ერთმანეთს დაემატება.</div>
+    <div class="bank-opts">
+      <button class="bank-opt" onclick="pickBank('bog')">
+        <span class="bo-ico">🟠</span>
+        <span><span class="bo-tit">საქართველოს ბანკი</span><span class="bo-sub">BOG — Statement of Account</span></span>
+      </button>
+      <button class="bank-opt" onclick="pickBank('tbc')">
+        <span class="bo-ico">🔵</span>
+        <span><span class="bo-tit">თიბისი ბანკი</span><span class="bo-sub">TBC — Account Statement</span></span>
+      </button>
+      <button class="bank-opt" onclick="pickBank('other')">
+        <span class="bo-ico">📄</span>
+        <span><span class="bo-tit">სხვა / ავტომატური</span><span class="bo-sub">სვეტების ხელით მიბმა</span></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBankPicker()">გაუქმება</button>
     </div>
   </div>
 </div>
@@ -264,38 +300,125 @@ td select{padding:5px 8px;font-size:12px;min-width:130px}
 "use strict";
 
 /* ============ STATE ============ */
-var STORE_KEY = "fin_tx_v1";
-var tx = [];              // {id,date(Date|null),dateStr,desc,category,type('income'|'expense'),amount(number)}
-var rawRows = [];         // array-of-arrays from imported sheet
+var STORE_KEY = "fin_tx_v2";
+var tx = [];              // {id,date,dateStr,desc,category,type,amount,bank}
+var rawRows = [];         // array-of-arrays from imported sheet (generic flow)
 var headers = [];
 var sortKey = "date", sortDir = -1;
 var charts = {};
+var pendingBank = "other"; // which bank was selected for the current import
 
-/* ============ CATEGORY AUTO-RULES (ka + en keywords) ============ */
-var CATEGORIES = ["ხელფასი","გაყიდვები","საკვები","ტრანსპორტი","კომუნალური","ქირა","გართობა","ჯანმრთელობა","შოპინგი","განათლება","გადასახადები","სხვა"];
-var RULES = [
-  ["ხელფასი",   ["ხელფას","ანაზღაურ","salary","wage","payroll"]],
-  ["გაყიდვები", ["გაყიდვ","შემოსავალი","sale","sales","invoice","ინვოის","revenue","შემოსულ"]],
-  ["საკვები",   ["საკვებ","რესტორ","კაფე","market","supermarket","სუპერ","food","grocery","ლანჩ","ვახშ","carrefour","spar","nikora","goodwill"]],
-  ["ტრანსპორტი",["ბენზ","საწვავ","fuel","gas","taxi","ტაქს","bolt","uber","yandex","ავტობუს","მეტრო","transport","პარკინგ","parking"]],
-  ["კომუნალური",["დენ","ელექტრო","წყალ","გაზ","ინტერნეტ","internet","electric","water","gas bill","utility","კომუნალ","magti","silknet"]],
-  ["ქირა",      ["ქირ","rent","არენდ","lease","იჯარ"]],
-  ["გართობა",   ["კინო","cinema","გართობ","ბარ","bar","კლუბ","club","netflix","spotify","game","გემ"]],
-  ["ჯანმრთელობა",["აფთიაქ","pharm","კლინიკ","clinic","ჰოსპ","hospital","ექიმ","doctor","health","მედიცინ","medical"]],
-  ["შოპინგი",   ["ტანსაცმ","clothes","zara","shop","მაღაზ","electronics","ტექნიკ","amazon","aliexpress"]],
-  ["განათლება", ["სწავლ","universit","school","სკოლ","course","კურს","education","training"]],
-  ["გადასახადები",["გადასახად","tax","საკომ","fee","commission","fine","ჯარიმ","პროცენტ","interest"]]
-];
-
-function autoCategory(desc, type){
-  var d = (desc||"").toLowerCase();
-  for(var i=0;i<RULES.length;i++){
-    var kws = RULES[i][1];
-    for(var j=0;j<kws.length;j++){
-      if(d.indexOf(kws[j].toLowerCase())>-1) return RULES[i][0];
+/* ============ BANK PROFILES ============ */
+/* columns resolved by header label (robust to blank rows / reordering).
+   debit = გასული/დებეტი (expense), credit = შემოსული/კრედიტი (income). */
+var BANK_LABELS = {
+  bog:"BOG — საქართველოს ბანკი",
+  tbc:"TBC — თიბისი ბანკი",
+  other:"სხვა / ავტომატური"
+};
+var BANK_PROFILES = {
+  bog:{ name:"BOG", need:["დებეტი","კრედიტი"], labels:{
+    date:["თარიღი"], debit:["დებეტი"], credit:["კრედიტი"],
+    desc:["დანიშნულება"], desc2:["ოპერაციის შინაარსი"], type:["ოპერაციის ტიპი"],
+    partnerIn:["გამგზავნის დასახელება"], partnerOut:["მიმღების დასახელება"], txid:["ოპერაციის იდ"]
+  }},
+  tbc:{ name:"TBC", need:["გასული თანხა","შემოსული თანხა"], labels:{
+    date:["თარიღი"], debit:["გასული თანხა"], credit:["შემოსული თანხა"],
+    desc:["დანიშნულება"], desc2:["დამატებითი ინფორმაცია"], type:["ტრანზაქციის ტიპი"],
+    partnerIn:["პარტნიორი"], partnerOut:["პარტნიორი"], txid:["ტრანზაქციის id"]
+  }}
+};
+function normH(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
+function findColByLabel(header,aliases){
+  if(!aliases)return -1;
+  var i,a;
+  // 1) exact match first (avoids "პარტნიორი" matching "პარტნიორის ანგარიში")
+  for(i=0;i<header.length;i++){var h=normH(header[i]);for(a=0;a<aliases.length;a++){if(h===normH(aliases[a]))return i;}}
+  // 2) substring match
+  for(i=0;i<header.length;i++){var h2=normH(header[i]);if(!h2)continue;for(a=0;a<aliases.length;a++){if(h2.indexOf(normH(aliases[a]))>-1)return i;}}
+  return -1;
+}
+function parseBankProfile(wb, bankId){
+  var prof=BANK_PROFILES[bankId];
+  var chosen=null;
+  for(var s=0;s<wb.SheetNames.length && !chosen;s++){
+    var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[s]],{header:1,defval:"",raw:true,blankrows:false});
+    for(var r=0;r<Math.min(rows.length,40);r++){
+      var hr=rows[r].map(normH);
+      var ok=prof.need.every(function(lbl){var n=normH(lbl);return hr.some(function(h){return h.indexOf(n)>-1;});});
+      if(ok){chosen={rows:rows,headerIdx:r,header:rows[r]};break;}
     }
   }
-  return "სხვა";
+  if(!chosen)return {error:"ვერ ვიპოვე "+prof.name+"-ის სტრუქტურა ამ ფაილში. დარწმუნდი, რომ სწორი ბანკი აირჩიე."};
+  var L=prof.labels,H=chosen.header;
+  var ci={
+    date:findColByLabel(H,L.date), debit:findColByLabel(H,L.debit), credit:findColByLabel(H,L.credit),
+    desc:findColByLabel(H,L.desc), desc2:findColByLabel(H,L.desc2), type:findColByLabel(H,L.type),
+    pin:findColByLabel(H,L.partnerIn), pout:findColByLabel(H,L.partnerOut), txid:findColByLabel(H,L.txid)
+  };
+  var out=[],skipped=0;
+  for(var i=chosen.headerIdx+1;i<chosen.rows.length;i++){
+    var row=chosen.rows[i];
+    var deb=parseAmount(row[ci.debit]), crd=parseAmount(row[ci.credit]);
+    var type,amount;
+    if(!isNaN(crd)&&Math.abs(crd)>0){type="income";amount=Math.abs(crd);}
+    else if(!isNaN(deb)&&Math.abs(deb)>0){type="expense";amount=Math.abs(deb);}
+    else {skipped++;continue;}
+    var d=toDate(row[ci.date]);
+    var desc=(ci.desc>-1?(""+row[ci.desc]).trim():"")||(ci.desc2>-1?(""+row[ci.desc2]).trim():"")||"—";
+    var partner=type==="income"?(ci.pin>-1?(""+row[ci.pin]).trim():""):(ci.pout>-1?(""+row[ci.pout]).trim():"");
+    var typeTxt=ci.type>-1?(""+row[ci.type]).trim():"";
+    var catText=[desc,typeTxt].join(" ");
+    var txid=ci.txid>-1?(""+row[ci.txid]).trim():"";
+    out.push({
+      id:"t"+Math.random().toString(36).slice(2,10),
+      date:d, dateStr:dateStr(d),
+      desc:partner?(desc+" — "+partner):desc,
+      category:autoCategory(catText,type), type:type, amount:amount, bank:prof.name,
+      _key:prof.name+"|"+(txid||(dateStr(d)+"|"+amount.toFixed(2)+"|"+type+"|"+desc))
+    });
+  }
+  return {records:out,skipped:skipped};
+}
+
+/* ============ CATEGORY AUTO-RULES (ka + en keywords) ============ */
+var CATEGORIES = ["ჩარიცხვები","ანაზღაურება","საკომისიო","კონვერტაცია","გადასახადები","ხელფასი","გაყიდვები","საკვები","ტრანსპორტი","კომუნალური","ქირა","გართობა","ჯანმრთელობა","შოპინგი","განათლება","სხვა"];
+// income and expense use separate rule sets; each falls back sensibly by type
+var INCOME_RULES = [
+  ["ხელფასი",   ["ხელფას","salary","payroll","wage"]],
+  ["გაყიდვები", ["გაყიდვ","sale","invoice","ინვოის","revenue"]]
+];
+var EXPENSE_RULES = [
+  ["ანაზღაურება",["გამომუშავებ","ანაზღაურ","payout"]],
+  ["საკომისიო", ["საკომისიო","საკომ.","commission"]],
+  ["კონვერტაცია",["კონვერტაცია","კონვერს","conversion","გადაცვლა"]],
+  ["გადასახადები",["გადასახად","tax","დღგ","vat","ჯარიმ","fine","interest"]],
+  ["ხელფასი",   ["ხელფას","salary","payroll"]],
+  ["საკვები",   ["საკვებ","რესტორ","კაფე","supermarket","სუპერ","food","grocery","ლანჩ","ვახშ","carrefour","spar","nikora","goodwill"]],
+  ["ტრანსპორტი",["ბენზ","საწვავ","fuel","taxi","ტაქს","bolt","uber","yandex","ავტობუს","მეტრო","parking"]],
+  ["კომუნალური",["ელექტრო","წყალ","ინტერნეტ","internet","electric","water","utility","კომუნალ","magti","silknet"]],
+  ["ქირა",      ["ქირ","rent","არენდ","lease","იჯარ"]],
+  ["გართობა",   ["კინო","cinema","გართობ","netflix","spotify"]],
+  ["ჯანმრთელობა",["აფთიაქ","pharm","კლინიკ","clinic","ჰოსპ","hospital","ექიმ","doctor","health","medical"]],
+  ["შოპინგი",   ["ტანსაცმ","clothes","zara","მაღაზ","electronics","ტექნიკ","amazon","aliexpress"]],
+  ["განათლება", ["სწავლ","universit","school","სკოლ","course","კურს","education","training"]]
+];
+// match keyword: ASCII single words use word boundaries (so "tax" != "Taxi"); others use substring
+function kwHit(text, kw){
+  kw=kw.toLowerCase();
+  if(/^[a-z]+$/.test(kw)){
+    return new RegExp("\\b"+kw+"\\b").test(text);
+  }
+  return text.indexOf(kw)>-1;
+}
+function autoCategory(desc, type){
+  var d = (desc||"").toLowerCase();
+  var rules = type==="income" ? INCOME_RULES : EXPENSE_RULES;
+  for(var i=0;i<rules.length;i++){
+    var kws = rules[i][1];
+    for(var j=0;j<kws.length;j++){ if(kwHit(d,kws[j])) return rules[i][0]; }
+  }
+  return type==="income" ? "ჩარიცხვები" : "სხვა";
 }
 
 /* ============ HELPERS ============ */
@@ -366,14 +489,32 @@ function toast(msg,type){
 }
 
 /* ============ IMPORT ============ */
-function triggerImport(){document.getElementById("file-input").click();}
+function triggerImport(){document.getElementById("bank-overlay").classList.add("open");}
+function pickBank(id){
+  pendingBank=id;
+  document.getElementById("bank-overlay").classList.remove("open");
+  document.getElementById("file-input").click();
+}
+function closeBankPicker(){document.getElementById("bank-overlay").classList.remove("open");}
 document.getElementById("file-input").addEventListener("change",function(e){
   var f=e.target.files[0];if(f)readFile(f);e.target.value="";
 });
-// drag & drop
+// drag & drop (defaults to the currently selected bank; open picker first for correct bank)
 var dz=document.getElementById("dropzone");
 ["dragenter","dragover"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();dz.classList.add("drag");});});
 ["dragleave","drop"].forEach(function(ev){document.body.addEventListener(ev,function(e){e.preventDefault();if(ev==="drop"){var f=e.dataTransfer.files[0];if(f)readFile(f);}dz.classList.remove("drag");});});
+
+// append new records, skipping duplicates already present (by _key)
+function addRecords(records){
+  var seen={};tx.forEach(function(t){if(t._key)seen[t._key]=1;});
+  var added=0,dupes=0;
+  records.forEach(function(r){
+    if(r._key&&seen[r._key]){dupes++;return;}
+    if(r._key)seen[r._key]=1;
+    tx.push(r);added++;
+  });
+  return {added:added,dupes:dupes};
+}
 
 function readFile(f){
   var name=f.name.toLowerCase();
@@ -383,10 +524,24 @@ function readFile(f){
     try{
       var data=new Uint8Array(ev.target.result);
       var wb=XLSX.read(data,{type:"array",cellDates:true});
+
+      // ---- known bank: use profile, append directly ----
+      if(pendingBank==="bog"||pendingBank==="tbc"){
+        var res=parseBankProfile(wb,pendingBank);
+        if(res.error){toast(res.error,"err");return;}
+        if(!res.records.length){toast("ვალიდური ჩანაწერი ვერ მოიძებნა","err");return;}
+        var r1=addRecords(res.records);
+        save();showDashboard();render();
+        var m=BANK_PROFILES[pendingBank].name+": დაემატა "+r1.added+" ტრანზაქცია";
+        if(r1.dupes)m+=" ("+r1.dupes+" დუბლიკატი გამოტოვდა)";
+        toast(m,"ok");
+        return;
+      }
+
+      // ---- generic: open mapping modal ----
       var ws=wb.Sheets[wb.SheetNames[0]];
       var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true,blankrows:false});
       if(!rows.length){toast("ფაილი ცარიელია","err");return;}
-      // find header row = first row with >=2 non-empty cells
       var hIdx=0;
       for(var i=0;i<Math.min(rows.length,10);i++){
         var nonEmpty=rows[i].filter(function(c){return (""+c).trim()!=="";}).length;
@@ -469,7 +624,8 @@ function buildRecords(){
     out.push({
       id:"t"+Math.random().toString(36).slice(2,10),
       date:d, dateStr:dateStr(d),
-      desc:desc, category:cat, type:det.type, amount:det.amount
+      desc:desc, category:cat, type:det.type, amount:det.amount, bank:"სხვა",
+      _key:"სხვა|"+dateStr(d)+"|"+det.amount.toFixed(2)+"|"+det.type+"|"+desc
     });
   });
   return {records:out,skipped:skipped};
@@ -492,22 +648,22 @@ function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","
 function applyMapping(){
   var res=buildRecords();
   if(!res.records.length){toast("ვერცერთი ვალიდური ჩანაწერი ვერ მოიძებნა — შეამოწმე თანხის სვეტი","err");return;}
-  tx=res.records;
+  var r1=addRecords(res.records);
   save();
   closeMap();
   showDashboard();
   render();
-  var msg="დამუშავდა "+res.records.length+" ტრანზაქცია";
-  if(res.skipped)msg+=" ("+res.skipped+" გამოტოვდა)";
+  var msg="დაემატა "+r1.added+" ტრანზაქცია";
+  if(r1.dupes)msg+=" ("+r1.dupes+" დუბლიკატი გამოტოვდა)";
   toast(msg,"ok");
 }
 
 /* ============ PERSISTENCE ============ */
 function save(){
   try{
-    var slim=tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount};});
+    var slim=tx.map(function(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank,_key:t._key};});
     localStorage.setItem(STORE_KEY,JSON.stringify(slim));
-  }catch(e){console.warn("save failed",e);}
+  }catch(e){console.warn("save failed",e);toast("შენახვა ვერ მოხერხდა — მონაცემები ძალიან დიდია","err");}
 }
 function load(){
   try{
@@ -515,7 +671,7 @@ function load(){
     var arr=JSON.parse(raw);if(!Array.isArray(arr)||!arr.length)return false;
     tx=arr.map(function(t){
       var d=t.dateStr&&t.dateStr!=="—"?toDate(t.dateStr):null;
-      return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount};
+      return {id:t.id,date:d,dateStr:t.dateStr,desc:t.desc,category:t.category,type:t.type,amount:t.amount,bank:t.bank||"სხვა",_key:t._key};
     });
     return true;
   }catch(e){return false;}
@@ -539,8 +695,19 @@ function showDashboard(){
 function render(){
   renderKpis();
   renderCatFilter();
+  renderBankFilter();
   renderTable();
   renderCharts();
+}
+function renderBankFilter(){
+  var banks={};tx.forEach(function(t){banks[t.bank||"სხვა"]=1;});
+  var sel=document.getElementById("filter-bank");if(!sel)return;
+  var cur=sel.value;
+  sel.innerHTML='<option value="">ყველა ბანკი</option>';
+  Object.keys(banks).sort().forEach(function(b){
+    var o=document.createElement("option");o.value=b;o.textContent=b;sel.appendChild(o);
+  });
+  sel.value=cur;
 }
 
 function totals(){
@@ -582,9 +749,11 @@ function filteredTx(){
   var q=document.getElementById("search").value.toLowerCase().trim();
   var ft=document.getElementById("filter-type").value;
   var fc=document.getElementById("filter-cat").value;
+  var fb=document.getElementById("filter-bank").value;
   var list=tx.filter(function(t){
     if(ft&&t.type!==ft)return false;
     if(fc&&t.category!==fc)return false;
+    if(fb&&(t.bank||"სხვა")!==fb)return false;
     if(q&&t.desc.toLowerCase().indexOf(q)===-1&&t.category.toLowerCase().indexOf(q)===-1)return false;
     return true;
   });
@@ -601,25 +770,31 @@ function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"
 
 function renderTable(){
   renderCatFilter();
+  renderBankFilter();
   var list=filteredTx();
   var tb=document.getElementById("tbody");
-  if(!list.length){tb.innerHTML='<tr><td colspan="5" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';
+  if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';
     document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
   var opts=CATEGORIES.slice();
   tx.forEach(function(t){if(opts.indexOf(t.category)===-1)opts.push(t.category);});
+  // cap rendered rows for performance on large statements
+  var MAX=1000, shown=list.slice(0,MAX);
   var h="",sum=0;
-  list.forEach(function(t){
-    sum+=t.type==="income"?t.amount:-t.amount;
+  list.forEach(function(t){sum+=t.type==="income"?t.amount:-t.amount;});
+  shown.forEach(function(t){
     var sel='<select onchange="changeCat(\''+t.id+'\',this.value)">';
     opts.forEach(function(c){sel+='<option'+(c===t.category?' selected':'')+'>'+esc(c)+'</option>';});
     sel+='</select>';
     h+='<tr><td>'+t.dateStr+'</td><td title="'+esc(t.desc)+'">'+esc(t.desc).slice(0,60)+'</td>'+
        '<td>'+sel+'</td>'+
+       '<td><span class="pill bank">'+esc(t.bank||"სხვა")+'</span></td>'+
        '<td><span class="pill '+(t.type==="income"?"in":"out")+'">'+(t.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
-       '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount).replace("₾","₾")+'</td></tr>';
+       '<td class="amt '+(t.type==="income"?"green":"red")+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
   });
   tb.innerHTML=h;
-  document.getElementById("tbl-info").textContent=list.length+" / "+tx.length+" ჩანაწერი";
+  var info=list.length+" / "+tx.length+" ჩანაწერი";
+  if(list.length>MAX)info+=" (ნაჩვენებია პირველი "+MAX+")";
+  document.getElementById("tbl-info").textContent=info;
   document.getElementById("tbl-sum").textContent="ბალანსი: "+fmt(sum);
 }
 function changeCat(id,val){
@@ -734,8 +909,8 @@ function doughnutOpts(){
 function exportCsv(){
   var list=filteredTx();
   if(!list.length){toast("ექსპორტისთვის ჩანაწერი არ არის","err");return;}
-  var rows=[["თარიღი","აღწერა","კატეგორია","ტიპი","თანხა"]];
-  list.forEach(function(t){rows.push([t.dateStr,t.desc,t.category,t.type==="income"?"შემოსავალი":"ხარჯი",(t.type==="income"?"":"-")+t.amount]);});
+  var rows=[["თარიღი","აღწერა","კატეგორია","ბანკი","ტიპი","თანხა"]];
+  list.forEach(function(t){rows.push([t.dateStr,t.desc,t.category,t.bank||"სხვა",t.type==="income"?"შემოსავალი":"ხარჯი",(t.type==="income"?"":"-")+t.amount]);});
   var csv="﻿"+rows.map(function(r){return r.map(function(c){var s=""+c;return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(",");}).join("\n");
   var blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
   var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="finance-export.csv";a.click();
