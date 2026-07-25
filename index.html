@@ -170,8 +170,8 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 .login-submit{width:100%;justify-content:center;padding:13px;font-size:14px}
 .login-submit:disabled{opacity:.6;cursor:default}
 .login-note{margin-top:18px;font-size:11.5px;color:var(--text3);text-align:center;line-height:1.5}
-.nav-user{font-size:12px;color:var(--text3);white-space:nowrap}
-body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,body:not(.authed) #btn-logout,body:not(.authed) #nav-user{display:none!important}
+#avatar{font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.05em;color:var(--green)}
+body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,body:not(.authed) #btn-logout,body:not(.authed) #avatar{display:none!important}
 
 /* PROGRESS */
 #progress{position:fixed;inset:0;z-index:700;display:none;align-items:center;justify-content:center;background:rgba(8,12,15,.82);backdrop-filter:blur(4px)}
@@ -220,7 +220,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
 <header>
   <div class="logo">₾<span>/</span>FIN</div>
   <div class="h-spacer"></div>
-  <span class="nav-user" id="nav-user"></span>
+  <button class="btn btn-sm" id="avatar" onclick="editInitials()" title="ინიციალების შეცვლა"></button>
   <button class="btn btn-sm" id="btn-import" onclick="triggerImport()">＋ იმპორტი</button>
   <button class="btn btn-sm btn-danger" id="btn-logout" onclick="doLogout()">გასვლა</button>
   <input type="file" id="file-input" accept=".xlsx,.xls,.csv" class="hidden">
@@ -1002,9 +1002,22 @@ function setAuthMode(m){
 function submitAuth(){if(authMode==="login")doLogin();else doSignup();}
 function togglePass(){var i=document.getElementById("login-pass");i.type=(i.type==="password"?"text":"password");document.getElementById("pass-eye").style.color=(i.type==="text"?"var(--green)":"");}
 function setBtnBusy(b){var btn=document.getElementById("login-btn");btn.disabled=b;btn.textContent=b?"მიმდინარეობს...":(authMode==="login"?"შესვლა":"ანგარიშის შექმნა");}
+function emailInitials(email){
+  var s=(email||"").split("@")[0].replace(/[^a-zA-ZႠ-ჿ]+/g," ").trim().split(/\s+/);
+  if(s.length>=2&&s[0]&&s[1])return (s[0][0]+s[1][0]).toUpperCase();
+  return ((s[0]||"?").slice(0,2)).toUpperCase();
+}
+function initialsKey(){return "fin_initials_"+(currentUser?currentUser.id:"");}
+function currentInitials(){return localStorage.getItem(initialsKey())||emailInitials(currentUser&&currentUser.email);}
+function setAvatar(){var a=document.getElementById("avatar");if(a)a.textContent=currentInitials();}
+function editInitials(){
+  var v=prompt("შენი ინიციალები (მაგ. MB):",currentInitials());
+  if(v==null)return;v=v.trim().slice(0,4).toUpperCase();
+  if(v){localStorage.setItem(initialsKey(),v);setAvatar();}
+}
 function afterLogin(user){
   currentUser=user;
-  document.getElementById("nav-user").textContent=user.email||"";
+  setAvatar();
   setAuthed(true);
   loginMsg("");
   loadRemote(function(){showData();showTab("dashboard");});
