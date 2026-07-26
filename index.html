@@ -104,6 +104,10 @@ td.amt{font-family:'Space Mono',monospace;font-weight:700;text-align:right}
 td select{padding:5px 8px;font-size:12px;min-width:150px}
 .empty{text-align:center;padding:40px;color:var(--text3)}
 .tbl-foot{padding:12px 16px;color:var(--text3);font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+#tbl-pager{display:flex;align-items:center;gap:8px}
+#tbl-pager .pg{border:1px solid var(--border2);background:var(--bg3);color:var(--text2);border-radius:8px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer}
+#tbl-pager .pg:hover:not(:disabled){color:var(--text);border-color:var(--green)}
+#tbl-pager .pg:disabled{opacity:.35;cursor:default}
 .clickable{cursor:pointer}
 .clickable:hover td{background:var(--green-dim)}
 
@@ -268,10 +272,10 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
     <div class="section-title">ტრანზაქციები</div>
     <div class="table-wrap">
       <div class="table-tools">
-        <input type="text" id="search" placeholder="🔍 ძებნა..." oninput="renderTable()">
-        <select id="filter-type" onchange="renderTable()"><option value="">ყველა ტიპი</option><option value="income">შემოსავალი</option><option value="expense">ხარჯი</option></select>
-        <select id="filter-cat" onchange="renderTable()"><option value="">ყველა კატეგორია</option></select>
-        <select id="filter-bank" onchange="renderTable()"><option value="">ყველა ბანკი</option></select>
+        <input type="text" id="search" placeholder="🔍 ძებნა..." oninput="tablePage=0;renderTable()">
+        <select id="filter-type" onchange="tablePage=0;renderTable()"><option value="">ყველა ტიპი</option><option value="income">შემოსავალი</option><option value="expense">ხარჯი</option></select>
+        <select id="filter-cat" onchange="tablePage=0;renderTable()"><option value="">ყველა კატეგორია</option></select>
+        <select id="filter-bank" onchange="tablePage=0;renderTable()"><option value="">ყველა ბანკი</option></select>
         <div class="h-spacer"></div>
         <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV</button>
       </div>
@@ -283,7 +287,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
         <th onclick="sortBy('type')">ტიპი</th>
         <th onclick="sortBy('amount')" style="text-align:right">თანხა</th>
       </tr></thead><tbody id="tbody"></tbody></table></div>
-      <div class="tbl-foot"><span id="tbl-info">—</span><span id="tbl-sum" class="mono"></span></div>
+      <div class="tbl-foot"><span id="tbl-info">—</span><span id="tbl-pager"></span><span id="tbl-sum" class="mono"></span></div>
     </div>
   </div>
 
@@ -384,6 +388,7 @@ var imports = [];       // [{id,bank,file,ts,count}]
 var DEFAULT_CAT = "სხვა";
 var rawRows=[], headers=[], pendingBank="other";
 var sortKey="date", sortDir=-1, periodFilter="", curTab="dashboard";
+var tablePage=0, PAGE_SIZE=500;
 var charts={};
 
 /* default categories (order = matching priority, top wins) */
@@ -757,7 +762,7 @@ function renderPeriod(){
   if(months["უცნობი"]){var o=document.createElement("option");o.value="უცნობი";o.textContent="უცნობი თარიღი";sel.appendChild(o);}
   sel.value=cur;
 }
-function onPeriodChange(){periodFilter=document.getElementById("period").value;render();}
+function onPeriodChange(){periodFilter=document.getElementById("period").value;tablePage=0;render();}
 
 function totals(list){var inc=0,exp=0,ci=0,ce=0;list.forEach(function(t){if(t.type==="income"){inc+=t.amount;ci++;}else{exp+=t.amount;ce++;}});return {inc:inc,exp:exp,net:inc-exp,ci:ci,ce:ce};}
 function renderKpis(){
@@ -796,14 +801,18 @@ function filteredTx(){
     if(av<bv)return -1*sortDir;if(av>bv)return 1*sortDir;return 0;});
   return list;
 }
-function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"||k==="amount")?-1:1;}renderTable();}
+function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"||k==="amount")?-1:1;}tablePage=0;renderTable();}
+function gotoPage(p){tablePage=p;renderTable();}
 function renderTable(){
   renderFilters();
   var list=filteredTx(),tb=document.getElementById("tbody");
-  if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";return;}
+  var pager=document.getElementById("tbl-pager");
+  if(!list.length){tb.innerHTML='<tr><td colspan="6" class="empty">ჩანაწერი ვერ მოიძებნა</td></tr>';document.getElementById("tbl-info").textContent="0 ჩანაწერი";document.getElementById("tbl-sum").textContent="";pager.innerHTML="";return;}
   var opts=catNames();
-  var MAX=800,shown=list.slice(0,MAX),h="",sum=0;
-  list.forEach(function(t){if(catIncluded(t.category))sum+=t.type==="income"?t.amount:-t.amount;});
+  var sum=0;list.forEach(function(t){if(catIncluded(t.category))sum+=t.type==="income"?t.amount:-t.amount;});
+  var pages=Math.max(1,Math.ceil(list.length/PAGE_SIZE));
+  if(tablePage>=pages)tablePage=pages-1;if(tablePage<0)tablePage=0;
+  var start=tablePage*PAGE_SIZE, shown=list.slice(start,start+PAGE_SIZE),h="";
   shown.forEach(function(t){
     var excl=!catIncluded(t.category);
     var sel='<select onchange="changeCat(\''+t.id+'\',this.value)">';
@@ -817,8 +826,12 @@ function renderTable(){
        '<td class="amt '+amtCls+'">'+(t.type==="income"?"+":"−")+fmt(t.amount)+'</td></tr>';
   });
   tb.innerHTML=h;
-  var info=list.length+" / "+tx.length+" ჩანაწერი";if(list.length>MAX)info+=" (ნაჩვენებია "+MAX+")";
-  document.getElementById("tbl-info").textContent=info;
+  document.getElementById("tbl-info").textContent=(start+1).toLocaleString()+"–"+(start+shown.length).toLocaleString()+" / "+list.length.toLocaleString()+(list.length!==tx.length?(" (სულ "+tx.length.toLocaleString()+")"):"");
+  if(pages>1){
+    pager.innerHTML='<button class="pg" '+(tablePage===0?"disabled":"")+' onclick="gotoPage('+(tablePage-1)+')">‹ წინა</button>'+
+      '<span>გვ. '+(tablePage+1)+" / "+pages+'</span>'+
+      '<button class="pg" '+(tablePage>=pages-1?"disabled":"")+' onclick="gotoPage('+(tablePage+1)+')">შემდეგი ›</button>';
+  }else pager.innerHTML="";
   document.getElementById("tbl-sum").textContent="ბალანსი: "+fmt(sum);
 }
 function changeCat(id,val){var t=tx.find(function(x){return x.id===id;});if(t){t.category=val;t.manual=true;renderKpis();renderCharts();upsertRows([rowFor(t)],false,null,function(err){if(err)toast("შენახვა ვერ მოხერხდა","err");});}}
