@@ -63,6 +63,16 @@ header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-f
 .stat-sub{font-size:12px;color:var(--text2);margin-top:6px}
 .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}
 
+/* SKELETON LOADING */
+@keyframes shimmer{100%{transform:translateX(100%)}}
+.skel{color:transparent!important;background:var(--bg3);border-radius:7px;position:relative;overflow:hidden}
+.skel::after,.chart-body.loading::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);animation:shimmer 1.15s infinite}
+.stat-val.skel{display:inline-block;min-width:100px;height:26px;vertical-align:middle}
+.stat-sub.skel{display:inline-block;min-width:64px;height:12px;border-radius:5px}
+#k-period.skel{min-width:130px;height:16px}
+.chart-body.loading{background:var(--bg3);border-radius:10px;overflow:hidden}
+.chart-body.loading canvas{opacity:0}
+
 .charts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
 .chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px}
 .chart-card.full{grid-column:1/-1}
@@ -843,9 +853,14 @@ function catIncluded(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)
 function monthRange(m){if(!m)return null;var y=+m.slice(0,4),mo=+m.slice(5,7);var ld=new Date(y,mo,0).getDate();return [m+"-01",m+"-"+(ld<10?"0":"")+ld];}
 var _dashReq=0;
 function emptyAgg(){return {inc:0,exp:0,ci:0,ce:0,cnt:0,dmin:null,dmax:null,months:[],catExp:[],catInc:[],daily:[]};}
+function setDashLoading(on){
+  ["k-income","k-expense","k-net","k-margin","k-income-sub","k-expense-sub","k-period","k-count"].forEach(function(id){var e=document.getElementById(id);if(e)e.classList.toggle("skel",on);});
+  document.querySelectorAll("#page-dashboard .chart-body").forEach(function(b){b.classList.toggle("loading",on);});
+}
 var _rpcOk=true;
 function loadDashboard(done){
   var ex=excludedCats(), pm=periodFilter||null, my=++_dashReq;
+  if(!agg)setDashLoading(true);
   if(!_rpcOk){loadDashboardClient(my,done);return;} // RPC known-missing → go straight to client agg
   Promise.all([
     sb.rpc("fin_kpi",{p_excluded:ex,p_month:pm}),
@@ -865,7 +880,7 @@ function loadDashboard(done){
     agg={inc:+k.income||0,exp:+k.expense||0,ci:+k.inc_cnt||0,ce:+k.exp_cnt||0,cnt:+k.cnt||0,dmin:k.dmin||null,dmax:k.dmax||null,
       months:res[1].data||[],catExp:res[2].data||[],catInc:res[3].data||[],daily:res[4].data||[]};
     hasData=agg.cnt>0;
-    renderPeriod();renderKpis();renderCharts();
+    renderPeriod();renderKpis();renderCharts();setDashLoading(false);
     if(done)done(null);
   });
 }
@@ -893,14 +908,14 @@ function loadDashboardClient(my,done){
   var PAGE=1000,CONC=6,finished=false,rows=[];
   showProgress("ითვლება...",null);
   sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
-    if(cr.error){hideProgress();toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");if(done)done(cr.error);return;}
+    if(cr.error){hideProgress();setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");if(done)done(cr.error);return;}
     var total=cr.count||0;
     hasData=total>0;
-    if(!total){agg=emptyAgg();hideProgress();if(my===_dashReq){renderPeriod();renderKpis();renderCharts();}if(done)done(null);return;}
+    if(!total){agg=emptyAgg();hideProgress();if(my===_dashReq){renderPeriod();renderKpis();renderCharts();setDashLoading(false);}if(done)done(null);return;}
     var pages=Math.ceil(total/PAGE),next=0,active=0,loaded=0;
     function fin(err){if(finished)return;finished=true;hideProgress();
-      if(err){toast("ჩატვირთვის შეცდომა: "+err.message,"err");if(done)done(err);return;}
-      if(my===_dashReq){computeAgg(rows);renderPeriod();renderKpis();renderCharts();}
+      if(err){setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+err.message,"err");if(done)done(err);return;}
+      if(my===_dashReq){computeAgg(rows);renderPeriod();renderKpis();renderCharts();setDashLoading(false);}
       if(done)done(null);}
     function launch(){while(active<CONC&&next<pages&&!finished){var p=next++;active++;
       sb.from("transactions").select("txdate,category,ttype,amount").eq("user_id",currentUser.id).range(p*PAGE,p*PAGE+PAGE-1).then(function(r){
