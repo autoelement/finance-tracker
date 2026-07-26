@@ -135,6 +135,9 @@ td select{padding:5px 8px;font-size:12px;min-width:150px}
 .chip b{cursor:pointer;color:var(--text3);font-weight:700}
 .chip b:hover{color:var(--red)}
 .chip.none{color:var(--text3);border-style:dashed;font-style:italic}
+.chip.ex{border-color:var(--red-dim);color:var(--red)}
+.kw-label{font-size:11px;font-weight:600;color:var(--text3);margin:2px 0 7px}
+.kw-label.ex{color:var(--red);margin-top:14px}
 .kw-add{display:flex;gap:6px}
 .kw-add input{padding:7px 10px;font-size:13px}
 .kw-add button{padding:7px 12px}
@@ -419,11 +422,20 @@ function defaultCats(){
 /* ============ CATEGORIZATION ENGINE ============ */
 function norm(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
 var _RULES=null; // compiled rules cache
-function compileRules(){_RULES=CATS.map(function(c){return {name:c.name,type:c.type,kws:c.keywords.map(function(k){return norm(k);}).filter(Boolean)};});}
+function compileRules(){_RULES=CATS.map(function(c){return {name:c.name,type:c.type,kws:c.keywords.map(function(k){return norm(k);}).filter(Boolean),ex:(c.exclude||[]).map(function(k){return norm(k);}).filter(Boolean)};});}
 function rulesChanged(){_RULES=null;}
 function categorizeFast(low,type){ // low = already normalized text
   var R=_RULES;
-  for(var i=0;i<R.length;i++){var c=R[i];if(c.type!=="any"&&c.type!==type)continue;var ks=c.kws;for(var j=0;j<ks.length;j++){if(low.indexOf(ks[j])>-1)return c.name;}}
+  for(var i=0;i<R.length;i++){
+    var c=R[i];if(c.type!=="any"&&c.type!==type)continue;
+    var hit=false,ks=c.kws,j;
+    for(j=0;j<ks.length;j++){if(low.indexOf(ks[j])>-1){hit=true;break;}}
+    if(!hit)continue;
+    var bad=false,ex=c.ex;
+    for(j=0;j<ex.length;j++){if(low.indexOf(ex[j])>-1){bad=true;break;}}
+    if(bad)continue; // has an excluded word → skip this category
+    return c.name;
+  }
   return DEFAULT_CAT;
 }
 function categorize(text, type){ if(!_RULES)compileRules(); return categorizeFast(norm(text),type); }
@@ -689,7 +701,7 @@ function applyMapping(){
 }
 
 /* ============ PERSISTENCE (Supabase per-row transactions) ============ */
-function normalizeCats(){CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!c.type)c.type="any";});}
+function normalizeCats(){CATS.forEach(function(c){if(c.include===undefined)c.include=true;if(!Array.isArray(c.keywords))c.keywords=[];if(!Array.isArray(c.exclude))c.exclude=[];if(!c.type)c.type="any";});}
 function slim(t){return {id:t.id,dateStr:t.dateStr,desc:t.desc,matchText:t.matchText,category:t.category,type:t.type,amount:t.amount,bank:t.bank,importId:t.importId,manual:t.manual,_key:t._key};}
 function rehydrateOne(d){var dt=d.dateStr&&d.dateStr!=="—"?toDate(d.dateStr):null;return {id:d.id,date:dt,dateStr:d.dateStr,desc:d.desc,matchText:d.matchText||d.desc,category:d.category,type:d.type,amount:d.amount,bank:d.bank||"სხვა",importId:d.importId,manual:!!d.manual,_key:d._key};}
 function rowFor(t){return {id:t.id,user_id:currentUser.id,import_id:t.importId,dedup_key:t._key,data:slim(t)};}
@@ -901,10 +913,16 @@ function renderCats(){
        '<button class="cat-del" title="წაშლა" onclick="delCategory('+i+')">🗑</button></div>'+
        '<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;margin-bottom:10px">'+
          '<input type="checkbox"'+(incl?" checked":"")+' onchange="toggleInclude('+i+',this.checked)" style="width:auto"> ითვლება ფინანსურ ანგარიშებში</label>';
+    h+='<div class="kw-label">✓ უნდა შეიცავდეს (ერთ-ერთს მაინც)</div>';
     h+='<div class="chips">';
     if(!c.keywords.length)h+='<span class="chip none">საკვანძო სიტყვები არ არის</span>';
     c.keywords.forEach(function(kw,j){h+='<span class="chip">'+esc(kw)+'<b onclick="delKeyword('+i+','+j+')">×</b></span>';});
     h+='</div><div class="kw-add"><input type="text" placeholder="დაამატე სიტყვა/ფრაზა..." onkeydown="if(event.key===\'Enter\'){addKeyword('+i+',this.value);this.value=\'\';}"><button class="btn btn-sm" onclick="var inp=this.previousElementSibling;addKeyword('+i+',inp.value);inp.value=\'\';">＋</button></div>';
+    h+='<div class="kw-label ex">✕ არ უნდა შეიცავდეს</div>';
+    h+='<div class="chips">';
+    if(!c.exclude.length)h+='<span class="chip none">გამონაკლისები არ არის</span>';
+    c.exclude.forEach(function(kw,j){h+='<span class="chip ex">'+esc(kw)+'<b onclick="delExclude('+i+','+j+')">×</b></span>';});
+    h+='</div><div class="kw-add"><input type="text" placeholder="გამომრიცხავი სიტყვა..." onkeydown="if(event.key===\'Enter\'){addExclude('+i+',this.value);this.value=\'\';}"><button class="btn btn-sm" onclick="var inp=this.previousElementSibling;addExclude('+i+',inp.value);inp.value=\'\';">＋</button></div>';
     h+='</div>';
   });
   wrap.innerHTML=h;
@@ -913,7 +931,7 @@ function addCategory(){
   var name=document.getElementById("new-cat-name").value.trim();var type=document.getElementById("new-cat-type").value;
   if(!name){toast("ჩაწერე კატეგორიის სახელი","err");return;}
   if(CATS.some(function(c){return c.name===name;})){toast("ასეთი კატეგორია უკვე არსებობს","err");return;}
-  CATS.splice(Math.max(0,CATS.length-1),0,{name:name,type:type,keywords:[],include:true}); // insert before "სხვა"
+  CATS.splice(Math.max(0,CATS.length-1),0,{name:name,type:type,keywords:[],exclude:[],include:true}); // insert before "სხვა"
   document.getElementById("new-cat-name").value="";rulesChanged();saveAll();renderCats();toast("დაემატა: "+name,"ok");
 }
 function delCategory(i){
@@ -928,6 +946,8 @@ function changeCatType(i,v){if(CATS[i]){CATS[i].type=v;rulesChanged();saveAll();
 function toggleInclude(i,v){if(CATS[i]){CATS[i].include=v;saveAll();renderCats();if(tx.length)render();}}
 function addKeyword(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(CATS[i].keywords.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].keywords.push(val);rulesChanged();saveAll();renderCats();}
 function delKeyword(i,j){if(CATS[i]){CATS[i].keywords.splice(j,1);rulesChanged();saveAll();renderCats();}}
+function addExclude(i,val){val=(val||"").trim();if(!val)return;if(!CATS[i])return;if(!CATS[i].exclude)CATS[i].exclude=[];if(CATS[i].exclude.indexOf(val)>-1){toast("ეს სიტყვა უკვე დამატებულია","err");return;}CATS[i].exclude.push(val);rulesChanged();saveAll();renderCats();}
+function delExclude(i,j){if(CATS[i]&&CATS[i].exclude){CATS[i].exclude.splice(j,1);rulesChanged();saveAll();renderCats();}}
 function recategorize(){
   compileRules();
   var total=tx.length,changed=[];
