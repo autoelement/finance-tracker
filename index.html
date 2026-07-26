@@ -525,7 +525,7 @@ function resolveBank(wb, bankId){return resolveBankFromSheets(wbToSheets(wb),ban
 var WORKER_SRC=[
  "importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');",
  "onmessage=function(e){try{",
- "var wb=XLSX.read(new Uint8Array(e.data),{type:'array',cellDates:true});",
+ "var wb=XLSX.read(new Uint8Array(e.data),{type:'array'});",
  "var out=[];wb.SheetNames.forEach(function(n){out.push({name:n,rows:XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:'',raw:true,blankrows:false})});});",
  "postMessage({ok:true,sheets:out});",
  "}catch(err){postMessage({ok:false,error:(err&&err.message)||'parse error'});}};"
@@ -604,7 +604,7 @@ function toDate(v){
   return null;
 }
 function toDateFmt(v, fmt){
-  if(v instanceof Date && !isNaN(v)) return v;
+  if(v instanceof Date && !isNaN(v)) return new Date(Date.UTC(v.getFullYear(),v.getMonth(),v.getDate()));
   if(typeof v==="number"){var d=new Date(Math.round((v-25569)*86400*1000));if(!isNaN(d))return d;}
   if(typeof v==="string"){
     var s=v.trim();if(!s)return null;
@@ -617,13 +617,14 @@ function toDateFmt(v, fmt){
       else if(fmt==="DMY"){dd=a;mo=b;yy=c;}
       else { if(a>31){yy=a;mo=b;dd=c;} else {dd=a;mo=b;yy=c;} } // auto
       if(yy<100)yy+=2000;
-      var dt=new Date(yy,(mo||1)-1,dd||1);if(!isNaN(dt))return dt;
+      var dt=new Date(Date.UTC(yy,(mo||1)-1,dd||1));if(!isNaN(dt))return dt;
     }
-    var d2=new Date(s);if(!isNaN(d2))return d2;
+    var d3=new Date(s);if(!isNaN(d3))return new Date(Date.UTC(d3.getFullYear(),d3.getMonth(),d3.getDate()));
   }
   return null;
 }
-function dateStr(d){if(!d)return "—";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
+// date-only, timezone-independent (uses UTC components so the calendar day never shifts)
+function dateStr(d){if(!d)return "—";var p=function(x){return(x<10?"0":"")+x;};return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate());}
 function monthKey(d){if(!d)return "უცნობი";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1);}
 function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function toast(msg,type){var t=document.getElementById("toast");t.textContent=msg;t.className="show "+(type||"");clearTimeout(t._t);t._t=setTimeout(function(){t.className="";},3500);}
@@ -652,7 +653,7 @@ function readFile(f){
       if(err){ // worker unavailable/failed → parse on main thread (may briefly freeze)
         progMsg("ცხრილის გახსნა...");
         setTimeout(function(){
-          try{var wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true});processSheets(wbToSheets(wb),importId,f.name);}
+          try{var wb=XLSX.read(new Uint8Array(buf),{type:"array"});processSheets(wbToSheets(wb),importId,f.name);}
           catch(e2){hideProgress();console.error(e2);toast("ფაილის გახსნის შეცდომა: "+e2.message,"err");}
         },30);
         return;
