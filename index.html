@@ -775,8 +775,11 @@ function excludedCats(){return CATS.filter(function(c){return c.include===false;
 function catIncluded(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)return CATS[i].include!==false;return true;}
 function monthRange(m){if(!m)return null;var y=+m.slice(0,4),mo=+m.slice(5,7);var ld=new Date(y,mo,0).getDate();return [m+"-01",m+"-"+(ld<10?"0":"")+ld];}
 var _dashReq=0;
+function emptyAgg(){return {inc:0,exp:0,ci:0,ce:0,cnt:0,dmin:null,dmax:null,months:[],catExp:[],catInc:[],daily:[]};}
+var _rpcOk=true;
 function loadDashboard(done){
   var ex=excludedCats(), pm=periodFilter||null, my=++_dashReq;
+  if(!_rpcOk){loadDashboardClient(my,done);return;} // RPC known-missing → go straight to client agg
   Promise.all([
     sb.rpc("fin_kpi",{p_excluded:ex,p_month:pm}),
     sb.rpc("fin_monthly",{p_excluded:ex}),
@@ -786,13 +789,59 @@ function loadDashboard(done){
   ]).then(function(res){
     if(my!==_dashReq)return;
     var bad=null;res.forEach(function(r){if(r.error&&!bad)bad=r.error;});
-    if(bad){toast("დათვლის შეცდომა: "+bad.message+" — გაუშვი RPC SQL","err");if(done)done(bad);return;}
+    if(bad){ // RPC unavailable (e.g. schema cache) → fall back to client-side aggregation
+      _rpcOk=false;
+      loadDashboardClient(my,done);
+      return;
+    }
     var k=(res[0].data&&res[0].data[0])||{};
     agg={inc:+k.income||0,exp:+k.expense||0,ci:+k.inc_cnt||0,ce:+k.exp_cnt||0,cnt:+k.cnt||0,dmin:k.dmin||null,dmax:k.dmax||null,
       months:res[1].data||[],catExp:res[2].data||[],catInc:res[3].data||[],daily:res[4].data||[]};
     hasData=agg.cnt>0;
     renderPeriod();renderKpis();renderCharts();
     if(done)done(null);
+  });
+}
+function computeAgg(rows){
+  var exSet={};excludedCats().forEach(function(n){exSet[n]=1;});
+  var pm=periodFilter||null;
+  var inc=0,exp=0,ci=0,ce=0,cnt=0,dmin=null,dmax=null,months={},catE={},catI={},daily={};
+  rows.forEach(function(r){
+    if(exSet[r.category||""])return;
+    var mk=r.txdate?(""+r.txdate).slice(0,7):null;
+    if(mk){if(!months[mk])months[mk]={income:0,expense:0,cnt:0};months[mk].cnt++;if(r.ttype==="income")months[mk].income+=+r.amount||0;else months[mk].expense+=+r.amount||0;}
+    if(pm&&mk!==pm)return;
+    var a=+r.amount||0;cnt++;
+    if(r.ttype==="income"){inc+=a;ci++;catI[r.category||"სხვა"]=(catI[r.category||"სხვა"]||0)+a;}
+    else{exp+=a;ce++;catE[r.category||"სხვა"]=(catE[r.category||"სხვა"]||0)+a;}
+    if(r.txdate){if(!dmin||r.txdate<dmin)dmin=r.txdate;if(!dmax||r.txdate>dmax)dmax=r.txdate;daily[r.txdate]=(daily[r.txdate]||0)+(r.ttype==="income"?a:-a);}
+  });
+  function arr(o){return Object.keys(o).map(function(k){return {category:k,total:o[k]};}).sort(function(x,y){return y.total-x.total;});}
+  agg={inc:inc,exp:exp,ci:ci,ce:ce,cnt:cnt,dmin:dmin,dmax:dmax,
+    months:Object.keys(months).map(function(k){return {mkey:k,income:months[k].income,expense:months[k].expense,cnt:months[k].cnt};}),
+    catExp:arr(catE),catInc:arr(catI),
+    daily:Object.keys(daily).sort().map(function(d){return {d:d,delta:daily[d]};})};
+}
+function loadDashboardClient(my,done){
+  var PAGE=1000,CONC=6,finished=false,rows=[];
+  showProgress("ითვლება...",null);
+  sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
+    if(cr.error){hideProgress();toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");if(done)done(cr.error);return;}
+    var total=cr.count||0;
+    hasData=total>0;
+    if(!total){agg=emptyAgg();hideProgress();if(my===_dashReq){renderPeriod();renderKpis();renderCharts();}if(done)done(null);return;}
+    var pages=Math.ceil(total/PAGE),next=0,active=0,loaded=0;
+    function fin(err){if(finished)return;finished=true;hideProgress();
+      if(err){toast("ჩატვირთვის შეცდომა: "+err.message,"err");if(done)done(err);return;}
+      if(my===_dashReq){computeAgg(rows);renderPeriod();renderKpis();renderCharts();}
+      if(done)done(null);}
+    function launch(){while(active<CONC&&next<pages&&!finished){var p=next++;active++;
+      sb.from("transactions").select("txdate,category,ttype,amount").eq("user_id",currentUser.id).range(p*PAGE,p*PAGE+PAGE-1).then(function(r){
+        active--;if(finished)return;if(r.error){fin(r.error);return;}
+        var d=r.data||[];for(var i=0;i<d.length;i++)rows.push(d[i]);
+        loaded+=d.length;progMsg("ითვლება... "+loaded.toLocaleString()+" / "+total.toLocaleString());if(total)setProgress(loaded/total*100);
+        if(next>=pages&&active===0){fin(null);return;}launch();});}}
+    launch();
   });
 }
 function render(){loadDashboard(function(){renderTable();});}
