@@ -626,6 +626,8 @@ function toDateFmt(v, fmt){
 // date-only, timezone-independent (uses UTC components so the calendar day never shifts)
 function dateStr(d){if(!d)return "—";var p=function(x){return(x<10?"0":"")+x;};return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate());}
 function monthKey(d){if(!d)return "უცნობი";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1);}
+var MONTHS_KA=["იანვარი","თებერვალი","მარტი","აპრილი","მაისი","ივნისი","ივლისი","აგვისტო","სექტემბერი","ოქტომბერი","ნოემბერი","დეკემბერი"];
+function monthLabel(mk){if(!mk)return "";var p=(""+mk).split("-");if(p.length<2)return mk;var mo=+p[1];return (MONTHS_KA[mo-1]||mk)+" "+p[0];}
 function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function toast(msg,type){var t=document.getElementById("toast");t.textContent=msg;t.className="show "+(type||"");clearTimeout(t._t);t._t=setTimeout(function(){t.className="";},3500);}
 
@@ -914,7 +916,7 @@ function renderPeriod(){
   var sel=document.getElementById("period"),cur=periodFilter;
   var ms=(agg?agg.months:[]).map(function(m){return m.mkey;}).filter(Boolean).sort().reverse();
   sel.innerHTML='<option value="">ყველა პერიოდი</option>';
-  ms.forEach(function(m){var o=document.createElement("option");o.value=m;o.textContent=m;sel.appendChild(o);});
+  ms.forEach(function(m){var o=document.createElement("option");o.value=m;o.textContent=monthLabel(m);sel.appendChild(o);});
   sel.value=cur;
 }
 function onPeriodChange(){periodFilter=document.getElementById("period").value;tablePage=0;render();}
@@ -994,7 +996,7 @@ function renderMonthly(){
     if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">მონაცემები არ არის</td></tr>';return;}
     var h="";
     rows.forEach(function(x){var inc=+x.income||0,exp=+x.expense||0,net=inc-exp;
-      h+='<tr class="clickable" onclick="gotoMonth(\''+x.mkey+'\')"><td class="mono">'+x.mkey+'</td><td style="text-align:right">'+(+x.cnt||0).toLocaleString()+'</td>'+
+      h+='<tr class="clickable" onclick="gotoMonth(\''+x.mkey+'\')"><td>'+monthLabel(x.mkey)+'</td><td style="text-align:right">'+(+x.cnt||0).toLocaleString()+'</td>'+
          '<td class="amt green">'+fmt(inc)+'</td><td class="amt red">'+fmt(exp)+'</td>'+
          '<td class="amt '+(net>=0?"green":"red")+'">'+fmt(net)+'</td><td style="text-align:right;color:var(--text3)">›</td></tr>';
     });
@@ -1146,7 +1148,7 @@ function destroyChart(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
 function renderCharts(){
   var a=agg||{inc:0,exp:0,months:[],catExp:[],catInc:[],daily:[]};
   var ms=a.months.slice().sort(function(x,y){return x.mkey<y.mkey?-1:1;});
-  var mk=ms.map(function(m){return m.mkey;});
+  var mk=ms.map(function(m){return monthLabel(m.mkey);});
   destroyChart("pnl");
   charts.pnl=new Chart(document.getElementById("chart-pnl"),{type:"bar",data:{labels:mk,datasets:[
     {label:"შემოსავალი",data:ms.map(function(m){return +m.income||0;}),backgroundColor:"#00d4a0cc",borderRadius:4},
