@@ -238,6 +238,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
   <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard')">მთავარი</button>
   <button class="tab" data-tab="monthly" onclick="showTab('monthly')">თვეები</button>
   <button class="tab" data-tab="categories" onclick="showTab('categories')">კატეგორიები</button>
+  <button class="tab" data-tab="settings" onclick="showTab('settings')">პარამეტრები</button>
   <button class="tab" data-tab="history" onclick="showTab('history')">ისტორია</button>
 </div>
 
@@ -322,6 +323,13 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
     <div class="cat-list" id="cat-list"></div>
   </div>
 
+  <!-- SETTINGS -->
+  <div class="page" id="page-settings">
+    <div class="section-title">თარიღის ფორმატი ბანკების მიხედვით</div>
+    <div class="hint" style="margin:-6px 0 16px">თუ ატვირთვისას თარიღები არასწორად ითვლება, მიუთითე თითო ბანკის ფაილში თარიღის ფორმატი. მოქმედებს <b>ახალ</b> იმპორტებზე — არსებულის გასასწორებლად ხელახლა ატვირთე ფაილი.</div>
+    <div class="cat-list" id="settings-list"></div>
+  </div>
+
   <!-- HISTORY -->
   <div class="page" id="page-history">
     <div class="section-title">იმპორტების ისტორია</div>
@@ -385,6 +393,14 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
         </select>
       </div>
     </div>
+    <div class="field"><label>თარიღის ფორმატი</label>
+      <select id="map-datefmt">
+        <option value="auto">ავტომატური</option>
+        <option value="DMY">დღე-თვე-წელი (DD-MM-YY)</option>
+        <option value="MDY">თვე-დღე-წელი (MM-DD-YY)</option>
+        <option value="YMD">წელი-თვე-დღე (YYYY-MM-DD)</option>
+      </select>
+    </div>
     <div class="section-title" style="margin:20px 0 8px">წინასწარი ხედი</div>
     <div class="preview-tbl" id="map-preview"></div>
     <div class="modal-actions"><button class="btn" onclick="closeMap()">გაუქმება</button><button class="btn btn-primary" onclick="applyMapping()">დამუშავება</button></div>
@@ -413,6 +429,11 @@ var rawRows=[], headers=[], pendingBank="other";
 var sortKey="date", sortDir=-1, periodFilter="", curTab="dashboard";
 var tablePage=0, PAGE_SIZE=500;
 var agg=null, hasData=false;
+var SETTINGS={bankFmt:{bog:"MDY",tbc:"DMY",other:"auto"}};
+function settingsKey(){return "fin_settings_"+(currentUser?currentUser.id:"");}
+function loadSettings(){try{var s=JSON.parse(localStorage.getItem(settingsKey())||"null");if(s&&s.bankFmt){SETTINGS=s;if(!SETTINGS.bankFmt.other)SETTINGS.bankFmt.other="auto";}}catch(e){}}
+function saveSettings(){try{localStorage.setItem(settingsKey(),JSON.stringify(SETTINGS));}catch(e){}}
+function bankFmt(bankId){return (SETTINGS.bankFmt&&SETTINGS.bankFmt[bankId])||"auto";}
 var charts={};
 
 /* default categories (order = matching priority, top wins) */
@@ -519,13 +540,13 @@ function parseInWorker(buf, done){
     w.postMessage(buf,[buf]);
   }catch(e){done("worker-failed");}
 }
-function bankRow(row, ci, prof, importId){
+function bankRow(row, ci, prof, importId, fmt){
   var deb=parseAmount(row[ci.debit]), crd=parseAmount(row[ci.credit]);
   var type,amount;
   if(!isNaN(crd)&&Math.abs(crd)>0){type="income";amount=Math.abs(crd);}
   else if(!isNaN(deb)&&Math.abs(deb)>0){type="expense";amount=Math.abs(deb);}
   else return null;
-  var d=toDate(row[ci.date]);
+  var d=toDateFmt(row[ci.date],fmt||"auto");
   var desc=(ci.desc>-1?(""+row[ci.desc]).trim():"")||(ci.desc2>-1?(""+row[ci.desc2]).trim():"")||"—";
   var partner=type==="income"?(ci.pin>-1?(""+row[ci.pin]).trim():""):(ci.pout>-1?(""+row[ci.pout]).trim():"");
   var typeTxt=ci.type>-1?(""+row[ci.type]).trim():"";
@@ -582,6 +603,26 @@ function toDate(v){
     var d2=new Date(s);if(!isNaN(d2))return d2;}
   return null;
 }
+function toDateFmt(v, fmt){
+  if(v instanceof Date && !isNaN(v)) return v;
+  if(typeof v==="number"){var d=new Date(Math.round((v-25569)*86400*1000));if(!isNaN(d))return d;}
+  if(typeof v==="string"){
+    var s=v.trim();if(!s)return null;
+    var dm=s.split(/[ T]/)[0];
+    var m=dm.match(/^(\d{1,4})[.\/-](\d{1,2})[.\/-](\d{1,4})$/);
+    if(m){
+      var a=+m[1],b=+m[2],c=+m[3],dd,mo,yy;
+      if(fmt==="YMD"){yy=a;mo=b;dd=c;}
+      else if(fmt==="MDY"){mo=a;dd=b;yy=c;}
+      else if(fmt==="DMY"){dd=a;mo=b;yy=c;}
+      else { if(a>31){yy=a;mo=b;dd=c;} else {dd=a;mo=b;yy=c;} } // auto
+      if(yy<100)yy+=2000;
+      var dt=new Date(yy,(mo||1)-1,dd||1);if(!isNaN(dt))return dt;
+    }
+    var d2=new Date(s);if(!isNaN(d2))return d2;
+  }
+  return null;
+}
 function dateStr(d){if(!d)return "—";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());}
 function monthKey(d){if(!d)return "უცნობი";var p=function(x){return(x<10?"0":"")+x;};return d.getFullYear()+"-"+p(d.getMonth()+1);}
 function esc(s){return (""+s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
@@ -629,8 +670,8 @@ function processSheets(sheets,importId,fname){
       if(info.error){hideProgress();toast(info.error,"err");return;}
       compileRules();
       progMsg("ტრანზაქციების დამუშავება...");setProgress(0);
-      var out=[],skipped=0,total=info.rows.length-info.start;
-      runChunked(total,function(k){var rec=bankRow(info.rows[info.start+k],info.ci,info.prof,importId);if(rec)out.push(rec);else skipped++;},
+      var out=[],skipped=0,total=info.rows.length-info.start,fmt=bankFmt(pendingBank);
+      runChunked(total,function(k){var rec=bankRow(info.rows[info.start+k],info.ci,info.prof,importId,fmt);if(rec)out.push(rec);else skipped++;},
         function(p){setProgress(p*100);},
         function(){info.rows=null;finishImport(out,skipped,importId,pendingBank,fname);});
       return;
@@ -668,7 +709,7 @@ function openMap(){
   fillSelect("col-desc",false,Math.max(0,guessCol(headers,["დანიშნ","აღწერ","desc","name","დასახელ"])));
   fillSelect("col-amount",false,Math.max(0,guessCol(headers,["თანხ","amount","sum","debit","credit"])));
   fillSelect("col-type",true,guessCol(headers,["ტიპ","type"]));
-  ["col-date","col-desc","col-amount","col-type","sign-mode"].forEach(function(id){document.getElementById(id).onchange=renderPreview;});
+  ["col-date","col-desc","col-amount","col-type","sign-mode","map-datefmt"].forEach(function(id){var el=document.getElementById(id);if(el)el.onchange=renderPreview;});
   renderPreview();document.getElementById("map-overlay").classList.add("open");
 }
 function closeMap(){document.getElementById("map-overlay").classList.remove("open");}
@@ -685,11 +726,12 @@ function detectType(row,ci,mode){
 function buildRecords(){
   var ci={date:+document.getElementById("col-date").value,desc:+document.getElementById("col-desc").value,amount:+document.getElementById("col-amount").value,type:+document.getElementById("col-type").value};
   var mode=document.getElementById("sign-mode").value, out=[],skipped=0;
+  var dfmt=(document.getElementById("map-datefmt")||{}).value||"auto";
   var impId=window._pendingImportId||("imp"+Date.now().toString(36));
   rawRows.forEach(function(row){
     var amtRaw=parseAmount(row[ci.amount]); if(isNaN(amtRaw)){skipped++;return;}
     var det=detectType(row,ci,mode); if(!det.amount){skipped++;return;}
-    var d=toDate(row[ci.date]); var desc=(""+row[ci.desc]).trim()||"—";
+    var d=toDateFmt(row[ci.date],dfmt); var desc=(""+row[ci.desc]).trim()||"—";
     out.push({id:"t"+Math.random().toString(36).slice(2,10),date:d,dateStr:dateStr(d),desc:desc,matchText:desc,
       category:categorize(desc,det.type),type:det.type,amount:det.amount,bank:"სხვა",importId:impId,manual:false,
       _key:"სხვა|"+dateStr(d)+"|"+det.amount.toFixed(2)+"|"+det.type+"|"+desc});
@@ -787,6 +829,7 @@ function showTab(name){
   applyTabView();
   if(name==="monthly")renderMonthly();
   else if(name==="categories")renderCats();
+  else if(name==="settings")renderSettings();
   else if(name==="history")renderHistory();
   else if(name==="dashboard"&&hasData)render();
 }
@@ -958,6 +1001,23 @@ function renderMonthly(){
   });
 }
 function gotoMonth(k){periodFilter=k;showTab("dashboard");}
+
+/* ============ SETTINGS UI ============ */
+function renderSettings(){
+  var banks=[["bog","🟠 საქართველოს ბანკი (BOG)"],["tbc","🔵 თიბისი ბანკი (TBC)"],["other","📄 სხვა / ავტომატური"]];
+  var fmts=[["auto","ავტომატური"],["DMY","დღე-თვე-წელი (DD-MM-YY)"],["MDY","თვე-დღე-წელი (MM-DD-YY)"],["YMD","წელი-თვე-დღე (YYYY-MM-DD)"]];
+  var h="";
+  banks.forEach(function(b){
+    var cur=bankFmt(b[0]);
+    h+='<div class="cat-card"><div class="cat-card-head"><div class="cat-name">'+esc(b[1])+'</div></div>'+
+       '<div class="kw-label">თარიღის ფორმატი</div>'+
+       '<select onchange="setBankFmt(\''+b[0]+'\',this.value)">';
+    fmts.forEach(function(f){h+='<option value="'+f[0]+'"'+(f[0]===cur?" selected":"")+'>'+f[1]+'</option>';});
+    h+='</select></div>';
+  });
+  document.getElementById("settings-list").innerHTML=h;
+}
+function setBankFmt(bankId,val){if(!SETTINGS.bankFmt)SETTINGS.bankFmt={};SETTINGS.bankFmt[bankId]=val;saveSettings();toast("შენახულია — მოქმედებს ახალ იმპორტზე","ok");}
 
 /* ============ CATEGORIES UI ============ */
 var CAT_COLORS={};
@@ -1198,6 +1258,7 @@ function editInitials(){
 }
 function afterLogin(user){
   currentUser=user;
+  loadSettings();
   setAvatar();
   setAuthed(true);
   loginMsg("");
