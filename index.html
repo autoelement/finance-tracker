@@ -79,7 +79,8 @@ header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-f
 .field{margin-bottom:16px}
 .field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:7px}
 .field label .req{color:var(--red)}
-select,input[type=text],input[type=email],input[type=password],input[type=number]{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:10px 12px;border-radius:9px;font-size:14px;font-family:inherit}
+select,input[type=text],input[type=email],input[type=password],input[type=number],input[type=date]{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:10px 12px;border-radius:9px;font-size:14px;font-family:inherit}
+input[type=date]{color-scheme:dark}
 select:focus,input:focus{outline:none;border-color:var(--green)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .hint{font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4}
@@ -280,6 +281,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
         <select id="filter-cat" onchange="tablePage=0;renderTable()"><option value="">ყველა კატეგორია</option></select>
         <select id="filter-bank" onchange="tablePage=0;renderTable()"><option value="">ყველა ბანკი</option></select>
         <div class="h-spacer"></div>
+        <button class="btn btn-sm" onclick="openManual()">＋ ხელით</button>
         <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV</button>
       </div>
       <div class="tbl-scroll"><table><thead><tr>
@@ -342,6 +344,25 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
       <button class="bank-opt" onclick="pickBank('other')"><span class="bo-ico">📄</span><span><span class="bo-tit">სხვა / ავტომატური</span><span class="bo-sub">სვეტების ხელით მიბმა</span></span></button>
     </div>
     <div class="modal-actions"><button class="btn" onclick="closeBankPicker()">გაუქმება</button></div>
+  </div>
+</div>
+
+<!-- MANUAL ENTRY MODAL -->
+<div class="overlay" id="manual-overlay">
+  <div class="modal" style="max-width:470px">
+    <h2>ხელით დამატება</h2>
+    <div class="sub">შეავსე ტრანზაქციის დეტალები და დაამატე ბაზაში.</div>
+    <div class="field-row">
+      <div class="field"><label>თარიღი</label><input type="date" id="m-date"></div>
+      <div class="field"><label>თანხა <span class="req">*</span></label><input type="number" id="m-amount" step="0.01" min="0" placeholder="0.00"></div>
+    </div>
+    <div class="field"><label>აღწერა / დანიშნულება</label><input type="text" id="m-desc" placeholder="მაგ. ოფისის ქირა"></div>
+    <div class="field-row">
+      <div class="field"><label>ტიპი</label><select id="m-type"><option value="expense">ხარჯი</option><option value="income">შემოსავალი</option></select></div>
+      <div class="field"><label>წყარო / ბანკი</label><input type="text" id="m-bank" placeholder="ხელით"></div>
+    </div>
+    <div class="field"><label>კატეგორია</label><select id="m-cat"></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeManual()">გაუქმება</button><button class="btn btn-primary" onclick="saveManual()">დამატება</button></div>
   </div>
 </div>
 
@@ -1086,6 +1107,40 @@ function renderCharts(){
 }
 function baseOpts(){return {responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{legend:{labels:{boxWidth:12,padding:12}},tooltip:{callbacks:{label:function(c){return c.dataset.label+": "+fmt(c.parsed.y);}}}},scales:{x:{grid:{color:C_GRID},ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:C_GRID},ticks:{callback:function(v){return fmtShort(v);}}}}};}
 function doughnutOpts(){return {responsive:true,maintainAspectRatio:false,cutout:"58%",plugins:{legend:{position:"right",labels:{boxWidth:11,padding:7,font:{size:10}}},tooltip:{callbacks:{label:function(c){var tot=c.dataset.data.reduce(function(a,b){return a+b;},0);var pct=tot?((c.parsed/tot)*100).toFixed(1):0;return c.label+": "+fmt(c.parsed)+" ("+pct+"%)";}}}}};}
+
+/* ============ MANUAL ENTRY ============ */
+function openManual(){
+  var sel=document.getElementById("m-cat");sel.innerHTML="";
+  catNames().forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;sel.appendChild(o);});
+  document.getElementById("m-date").value=new Date().toISOString().slice(0,10);
+  document.getElementById("m-amount").value="";
+  document.getElementById("m-desc").value="";
+  document.getElementById("m-bank").value="";
+  document.getElementById("m-type").value="expense";
+  document.getElementById("manual-overlay").classList.add("open");
+}
+function closeManual(){document.getElementById("manual-overlay").classList.remove("open");}
+function saveManual(){
+  var d=document.getElementById("m-date").value;
+  var amount=parseFloat(document.getElementById("m-amount").value);
+  var desc=document.getElementById("m-desc").value.trim()||"—";
+  var type=document.getElementById("m-type").value;
+  var bank=document.getElementById("m-bank").value.trim()||"ხელით";
+  var cat=document.getElementById("m-cat").value||DEFAULT_CAT;
+  if(isNaN(amount)||amount<=0){toast("შეიყვანე თანხა (0-ზე მეტი)","err");return;}
+  var rid="t"+Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+  var rec={id:rid,dateStr:d||"—",desc:desc,matchText:desc,category:cat,type:type,amount:Math.abs(amount),bank:bank,importId:"manual",manual:true,_key:"manual|"+rid};
+  showProgress("ინახება...",null);
+  upsertRows([rowFor(rec)],false,null,function(err){
+    hideProgress();
+    if(err){toast("შენახვა ვერ მოხერხდა: "+err.message,"err");return;}
+    var im=imports.find(function(x){return x.id==="manual";});
+    if(im)im.count=(im.count||0)+1; else imports.push({id:"manual",bank:"ხელით",file:"ხელით დამატებული",ts:Date.now(),count:1});
+    saveAll();hasData=true;closeManual();
+    showData();showTab("dashboard");
+    toast("დაემატა: "+fmt(Math.abs(amount)),"ok");
+  });
+}
 
 /* ============ EXPORT ============ */
 function exportCsv(){
