@@ -732,17 +732,29 @@ function upsertRows(rows, ignoreDup, onProg, done){
 }
 /* load all transaction rows for the user (paginated) */
 function loadAllRows(onProg, done){
-  tx=[];var page=0,PAGE=1000;
-  function next(){
-    sb.from("transactions").select("data").eq("user_id",currentUser.id).range(page*PAGE,page*PAGE+PAGE-1).then(function(res){
-      if(res.error){if(done)done(res.error);return;}
-      var d=res.data||[];
-      for(var i=0;i<d.length;i++)tx.push(rehydrateOne(d[i].data));
-      if(onProg)onProg(tx.length);
-      if(d.length<PAGE){if(done)done(null);}else{page++;setTimeout(next,0);}
-    });
-  }
-  next();
+  tx=[];var PAGE=1000,CONC=6,finished=false;
+  function finish(err){if(finished)return;finished=true;done(err);}
+  sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(res){
+    if(res.error){finish(res.error);return;}
+    var total=res.count||0;
+    if(!total){finish(null);return;}
+    var pages=Math.ceil(total/PAGE),nextPage=0,active=0,loaded=0;
+    function launch(){
+      while(active<CONC && nextPage<pages && !finished){
+        var p=nextPage++;active++;
+        sb.from("transactions").select("data").eq("user_id",currentUser.id).range(p*PAGE,p*PAGE+PAGE-1).then(function(r){
+          active--;
+          if(finished)return;
+          if(r.error){finish(r.error);return;}
+          var d=r.data||[];for(var i=0;i<d.length;i++)tx.push(rehydrateOne(d[i].data));
+          loaded+=d.length;if(onProg)onProg(loaded,total);
+          if(nextPage>=pages && active===0){finish(null);return;}
+          launch();
+        });
+      }
+    }
+    launch();
+  });
 }
 function loadRemote(done){
   showProgress("ანგარიშის ჩატვირთვა...",null);
@@ -752,8 +764,8 @@ function loadRemote(done){
     imports=(st&&Array.isArray(st.imports))?st.imports:[];
     normalizeCats();rulesChanged();
     if(!st&&!res.error)sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[]},{onConflict:"user_id"});
-    progMsg("ტრანზაქციები იტვირთება...");
-    loadAllRows(function(n){progMsg("ტრანზაქციები იტვირთება... "+n.toLocaleString());},function(err){
+    progMsg("ტრანზაქციები იტვირთება...");setProgress(0);
+    loadAllRows(function(n,total){progMsg("ტრანზაქციები იტვირთება... "+n.toLocaleString()+" / "+total.toLocaleString());if(total)setProgress(n/total*100);},function(err){
       hideProgress();
       if(err){
         if((err.message||"").indexOf("transaction")>-1||err.code==="42P01"||err.code==="PGRST205")
