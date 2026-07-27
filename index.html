@@ -293,6 +293,14 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
       <div class="chart-card"><div class="chart-head"><div class="chart-title">კუმულაციური ბალანსი</div></div><div class="chart-body"><canvas id="chart-cum"></canvas></div></div>
     </div>
 
+    <div class="section-title">კატეგორიების ჯამები</div>
+    <div class="table-wrap">
+      <div class="tbl-scroll"><table><thead><tr>
+        <th>კატეგორია</th><th>ტიპი</th><th style="text-align:right">ჩანაწერი</th><th style="text-align:right">ჯამი</th><th></th>
+      </tr></thead><tbody id="catsum-body"></tbody></table></div>
+      <div class="tbl-foot"><span id="catsum-info">—</span></div>
+    </div>
+
     <div class="section-title">ტრანზაქციები</div>
     <div class="table-wrap">
       <div class="table-tools">
@@ -899,7 +907,35 @@ function afterDataChange(cb){
   try{localStorage.removeItem(sumCacheKey());}catch(e){}
   rebuildSummary(function(){if(cb)cb();});
 }
-function renderDash(){renderPeriod();renderKpis();renderCharts();setDashLoading(false);}
+function renderDash(){renderPeriod();renderKpis();renderCharts();renderCatSummary();setDashLoading(false);}
+/* per-category totals for the current period — directly comparable with the transactions table */
+function renderCatSummary(){
+  var tb=document.getElementById("catsum-body");if(!tb)return;
+  var a=agg||{catInc:[],catExp:[]};
+  var rows=[];
+  (a.catInc||[]).forEach(function(c){rows.push({cat:c.category,type:"income",total:+c.total||0,cnt:c.cnt});});
+  (a.catExp||[]).forEach(function(c){rows.push({cat:c.category,type:"expense",total:+c.total||0,cnt:c.cnt});});
+  rows.sort(function(x,y){return y.total-x.total;});
+  if(!rows.length){tb.innerHTML='<tr><td colspan="5" class="empty">მონაცემები არ არის</td></tr>';document.getElementById("catsum-info").textContent="";return;}
+  var h="",ti=0,te=0;
+  rows.forEach(function(r){
+    if(r.type==="income")ti+=r.total;else te+=r.total;
+    h+='<tr class="clickable" onclick="filterByCat(\''+esc(r.cat).replace(/'/g,"\\'")+'\',\''+r.type+'\')">'+
+       '<td><span class="cat-dot" style="display:inline-block;background:'+catColor(r.cat)+';margin-right:8px"></span>'+esc(r.cat)+'</td>'+
+       '<td><span class="pill '+(r.type==="income"?"in":"out")+'">'+(r.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
+       '<td style="text-align:right">'+(r.cnt!=null?(+r.cnt).toLocaleString():"—")+'</td>'+
+       '<td class="amt '+(r.type==="income"?"green":"red")+'">'+fmt(r.total)+'</td>'+
+       '<td style="text-align:right;color:var(--text3)">›</td></tr>';
+  });
+  tb.innerHTML=h;
+  document.getElementById("catsum-info").textContent="შემოსავალი "+fmt(ti)+" · ხარჯი "+fmt(te)+" · ნეტო "+fmt(ti-te);
+}
+function filterByCat(cat,type){
+  document.getElementById("filter-cat").value=cat;
+  document.getElementById("filter-type").value=type;
+  tablePage=0;renderTable();
+  var el=document.getElementById("tbody");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"start"});
+}
 
 /* ---- summary table: tiny pre-aggregated rows (month × category × type).
    Everything on the dashboard derives from it in memory, so no query ever
