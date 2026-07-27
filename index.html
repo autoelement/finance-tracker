@@ -992,6 +992,39 @@ function rebuildSummary(done){ // recompute server-side after data changes
     loadSummary(function(err){if(done)done(err);});
   });
 }
+/* the summary must always account for exactly as many rows as the transactions
+   table holds; if it doesn't, it is stale/incomplete and gets rebuilt */
+function ensureSummaryFresh(my,done){
+  sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
+    if(cr.error){if(done)done(null);return;}
+    var real=cr.count||0, inSum=0, sInc=0, sExp=0;
+    (SUM||[]).forEach(function(r){inSum+=+r.cnt||0;if(r.ttype==="income")sInc+=+r.total||0;else sExp+=+r.total||0;});
+    _txCount=real;
+    if(real===inSum){                                  // counts agree — cross-check the amounts too
+      sb.rpc("fin_kpi",{p_excluded:[],p_month:null}).then(function(k){
+        if(k.error||!k.data||!k.data[0]){if(done)done(null);return;}   // no RPC → counts check is enough
+        var d=k.data[0], ri=+d.income||0, re=+d.expense||0;
+        if(Math.abs(ri-sInc)<0.01&&Math.abs(re-sExp)<0.01){if(done)done(null);return;}
+        if(_sumRebuilt){if(done)done(null);return;}
+        _sumRebuilt=true;showProgress("ჯამები ითვლება...",null);
+        rebuildSummary(function(err){hideProgress();if(!err&&my===_dashReq){aggFromSummary();renderDash();}if(done)done(null);});
+      });
+      return;
+    }
+    if(_sumRebuilt){                                    // already tried once this session
+      if(real>0&&!inSum){legacyDashboard(my,done);return;}
+      if(done)done(null);return;
+    }
+    _sumRebuilt=true;
+    showProgress("ჯამები ითვლება...",null);
+    rebuildSummary(function(err){
+      hideProgress();
+      if(err||!SUM||(!SUM.length&&real>0)){legacyDashboard(my,done);return;}
+      if(my===_dashReq){aggFromSummary();renderDash();}
+      if(done)done(null);
+    });
+  });
+}
 function loadDashboard(done){
   var my=++_dashReq;
   if(_sumOk){
@@ -1003,19 +1036,8 @@ function loadDashboard(done){
     loadSummary(function(err){
       _sumLoading=false;
       if(err){legacyDashboard(my,done);return;}   // summary table not set up → old path
-      if((!SUM||!SUM.length)&&_txCount>0&&!_sumRebuilt){   // summary empty but data exists → build it once
-        _sumRebuilt=true;
-        showProgress("ჯამების აგება...",null);
-        rebuildSummary(function(err2){
-          hideProgress();
-          if(err2||!SUM||!SUM.length){legacyDashboard(my,done);return;}
-          if(my===_dashReq){aggFromSummary();renderDash();}
-          if(done)done(null);
-        });
-        return;
-      }
       if(my===_dashReq){aggFromSummary();renderDash();}
-      if(done)done(null);
+      ensureSummaryFresh(my,done);   // verify against the real rows; rebuild if it drifted
     });
     return;
   }
