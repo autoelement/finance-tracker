@@ -929,9 +929,22 @@ function renderCatSummary(){
   (a.catInc||[]).forEach(function(c){rows.push({cat:c.category,type:"income",total:+c.total||0,cnt:c.cnt});});
   (a.catExp||[]).forEach(function(c){rows.push({cat:c.category,type:"expense",total:+c.total||0,cnt:c.cnt});});
   rows.sort(function(x,y){return y.total-x.total;});
-  if(!rows.length){tb.innerHTML='<tr><td colspan="5" class="empty">მონაცემები არ არის</td></tr>';document.getElementById("catsum-info").textContent="";return;}
+  // categories with "ითვლება ანგარიშებში" switched off are listed too — otherwise
+  // they vanish without explanation even though the transactions clearly exist
+  var off=(a.catOff||[]).map(function(c){return {cat:c.category,type:c.ttype==="income"?"income":"expense",total:+c.total||0,cnt:c.cnt,off:true};});
+  if(!rows.length&&!off.length){tb.innerHTML='<tr><td colspan="5" class="empty">მონაცემები არ არის</td></tr>';document.getElementById("catsum-info").textContent="";return;}
   var h="",ti=0,te=0;
-  rows.forEach(function(r){
+  rows.concat(off).forEach(function(r){
+    if(r.off){
+      h+='<tr class="clickable" style="opacity:.55" onclick="filterByCat(\''+esc(r.cat).replace(/'/g,"\\'")+'\',\''+r.type+'\')">'+
+         '<td><span class="cat-dot" style="display:inline-block;background:'+catColor(r.cat)+';margin-right:8px"></span>'+esc(r.cat)+
+         ' <span class="pill" title="პარამეტრებში ამ კატეგორიას გამორთული აქვს ანგარიშებში ჩათვლა">არ ითვლება</span></td>'+
+         '<td><span class="pill '+(r.type==="income"?"in":"out")+'">'+(r.type==="income"?"შემოს.":"ხარჯი")+'</span></td>'+
+         '<td style="text-align:right">'+(r.cnt!=null?(+r.cnt).toLocaleString():"—")+'</td>'+
+         '<td class="amt" style="color:var(--text3)">'+fmt(r.total)+'</td>'+
+         '<td style="text-align:right;color:var(--text3)">›</td></tr>';
+      return;
+    }
     if(r.type==="income")ti+=r.total;else te+=r.total;
     h+='<tr class="clickable" onclick="filterByCat(\''+esc(r.cat).replace(/'/g,"\\'")+'\',\''+r.type+'\')">'+
        '<td><span class="cat-dot" style="display:inline-block;background:'+catColor(r.cat)+';margin-right:8px"></span>'+esc(r.cat)+'</td>'+
@@ -957,13 +970,20 @@ var SUM=null, _sumOk=true, _sumLoading=false, _txCount=0, _sumRebuilt=false;
 var SUM_RPC_WAIT=180000;          // how long the server-side rebuild may take
 var _sumDiag="", _sumServerMs=0;  // why the browser had to do the counting
 function sumCacheKey(){return "fin_sum_"+(currentUser?currentUser.id:"");}
+/* categories whose "counts in reports" box is off: still listed, never summed */
+function offArr(o){return Object.keys(o).map(function(k){return o[k];}).sort(function(a,b){return b.total-a.total;});}
 function aggFromSummary(){
   var ex={};excludedCats().forEach(function(n){ex[n]=1;});
   var pm=periodFilter||null;
-  var inc=0,exp=0,ci=0,ce=0,cnt=0,dmin=null,dmax=null,months={},catE={},catI={};
+  var inc=0,exp=0,ci=0,ce=0,cnt=0,dmin=null,dmax=null,months={},catE={},catI={},catX={};
   SUM.forEach(function(r){
     var mk=r.mkey,t=+r.total||0,c=+r.cnt||0,isInc=r.ttype==="income";
-    if(ex[r.category])return;
+    if(ex[r.category]){   // kept visible, just never added to any total
+      if(!pm||mk===pm){var kx=r.category+"|"+r.ttype;
+        if(!catX[kx])catX[kx]={category:r.category,ttype:r.ttype,total:0,cnt:0};
+        catX[kx].total+=t;catX[kx].cnt+=c;}
+      return;
+    }
     if(!months[mk])months[mk]={income:0,expense:0,cnt:0};
     months[mk].cnt+=c;if(isInc)months[mk].income+=t;else months[mk].expense+=t;
     if(pm&&mk!==pm)return;
@@ -978,7 +998,7 @@ function aggFromSummary(){
   function arr(o){return Object.keys(o).map(function(k){return {category:k,total:o[k].total,cnt:o[k].cnt};}).sort(function(a,b){return b.total-a.total;});}
   agg={inc:inc,exp:exp,ci:ci,ce:ce,cnt:cnt,dmin:dmin,dmax:dmax,
     months:Object.keys(months).map(function(k){return {mkey:k,income:months[k].income,expense:months[k].expense,cnt:months[k].cnt};}),
-    catExp:arr(catE),catInc:arr(catI),daily:[]};
+    catExp:arr(catE),catInc:arr(catI),catOff:offArr(catX),daily:[]};
   if(SUM.length)hasData=true;   // never let an empty/stale summary hide real transactions
 }
 function loadSummary(done){
@@ -1101,16 +1121,52 @@ function ensureSummaryFresh(my,done){
     }
     var d=k.data[0], real=+d.cnt||0, ri=+d.income||0, re=+d.expense||0;
     _txCount=real;
-    if(real===inSum&&Math.abs(ri-sInc)<0.01&&Math.abs(re-sExp)<0.01){if(done)done(null);return;} // consistent
-    if(_sumRebuilt){if(real>0&&!inSum)legacyDashboard(my,done);else if(done)done(null);return;}
-    _sumRebuilt=true;
-    showProgress("ჯამები ითვლება...",null);
-    rebuildSummary(function(err){
-      hideProgress();
-      if(err||!SUM||(!SUM.length&&real>0)){legacyDashboard(my,done);return;}
-      if(my===_dashReq){aggFromSummary();renderDash();}
-      if(done)done(null);
+    function heal(msg){
+      if(_sumRebuilt){if(real>0&&!inSum)legacyDashboard(my,done);else if(done)done(null);return;}
+      _sumRebuilt=true;_allRows=null;   // whatever snapshot we hold is suspect too
+      showProgress(msg,null);
+      rebuildSummary(function(err){
+        hideProgress();
+        if(err||!SUM||(!SUM.length&&real>0)){legacyDashboard(my,done);return;}
+        if(my===_dashReq){aggFromSummary();renderDash();}
+        if(done)done(null);
+      });
+    }
+    if(real===inSum&&Math.abs(ri-sInc)<0.01&&Math.abs(re-sExp)<0.01){
+      // the grand totals match — but a row that moved from one category to another
+      // changes neither the count nor the totals, so check the breakdown as well
+      categoriesDrifted(function(drifted){
+        if(drifted)heal("კატეგორიების ჯამები ახლდება...");
+        else if(done)done(null);
+      });
+      return;
+    }
+    heal("ჯამები ითვლება...");
+  });
+}
+/* compare the summary's per-category totals against the rows themselves */
+function categoriesDrifted(cb){
+  var mine={};
+  (SUM||[]).forEach(function(r){
+    var k=(r.ttype==="income"?"i|":"e|")+(r.category||"სხვა");
+    if(!mine[k])mine[k]={total:0,cnt:0};
+    mine[k].total+=+r.total||0;mine[k].cnt+=+r.cnt||0;
+  });
+  Promise.all([
+    sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"expense"}),
+    sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"income"})
+  ]).then(function(res){
+    if(res[0].error||res[1].error){cb(false);return;}   // can't tell → leave the summary alone
+    var seen={},drift=false;
+    [["e",res[0].data||[]],["i",res[1].data||[]]].forEach(function(p){
+      p[1].forEach(function(r){
+        var k=p[0]+"|"+(r.category||"სხვა");seen[k]=1;
+        var m=mine[k];
+        if(!m||Math.abs((+r.total||0)-m.total)>0.01||(r.cnt!=null&&(+r.cnt)!==m.cnt))drift=true;
+      });
     });
+    Object.keys(mine).forEach(function(k){if(!seen[k]&&mine[k].cnt>0)drift=true;});
+    cb(drift);
   });
 }
 function loadDashboard(done){
@@ -1149,16 +1205,22 @@ function fetchDash(my,sig,silent,done){
   Promise.all([
     sb.rpc("fin_kpi",{p_excluded:ex,p_month:pm}),
     sb.rpc("fin_monthly",{p_excluded:ex}),
-    sb.rpc("fin_by_category",{p_excluded:ex,p_month:pm,p_type:"expense"}),
-    sb.rpc("fin_by_category",{p_excluded:ex,p_month:pm,p_type:"income"}),
+    sb.rpc("fin_by_category",{p_excluded:[],p_month:pm,p_type:"expense"}),   // all of them; split below
+    sb.rpc("fin_by_category",{p_excluded:[],p_month:pm,p_type:"income"}),
     sb.rpc("fin_daily",{p_excluded:ex,p_month:pm})
   ]).then(function(res){
     if(my!==_dashReq)return;
     var bad=null;res.forEach(function(r){if(r.error&&!bad)bad=r.error;});
     if(bad){_rpcOk=false;loadDashboardClient(my,sig,silent,done);return;}
     var k=(res[0].data&&res[0].data[0])||{};
+    var exSet={},off=[];ex.forEach(function(n){exSet[n]=1;});
+    function keep(list,tt){return (list||[]).filter(function(c){
+      if(!exSet[c.category])return true;
+      off.push({category:c.category,ttype:tt,total:+c.total||0,cnt:c.cnt});return false;});}
+    var expCats=keep(res[2].data,"expense"), incCats=keep(res[3].data,"income");
+    off.sort(function(a,b){return b.total-a.total;});
     agg={inc:+k.income||0,exp:+k.expense||0,ci:+k.inc_cnt||0,ce:+k.exp_cnt||0,cnt:+k.cnt||0,dmin:k.dmin||null,dmax:k.dmax||null,
-      months:res[1].data||[],catExp:res[2].data||[],catInc:res[3].data||[],daily:res[4].data||[]};
+      months:res[1].data||[],catExp:expCats,catInc:incCats,catOff:off,daily:res[4].data||[]};
     agg._fresh=1;_aggSig=sig;hasData=agg.cnt>0;saveAggCache();renderDash();
     if(done)done(null);
   });
@@ -1166,10 +1228,16 @@ function fetchDash(my,sig,silent,done){
 function computeAgg(rows){
   var exSet={};excludedCats().forEach(function(n){exSet[n]=1;});
   var pm=periodFilter||null;
-  var inc=0,exp=0,ci=0,ce=0,cnt=0,dmin=null,dmax=null,months={},catE={},catI={},daily={};
+  var inc=0,exp=0,ci=0,ce=0,cnt=0,dmin=null,dmax=null,months={},catE={},catI={},catX={},daily={};
   rows.forEach(function(r){
-    if(exSet[r.category||""])return;
-    var mk=r.txdate?(""+r.txdate).slice(0,7):null;
+    var mk0=r.txdate?(""+r.txdate).slice(0,7):null;
+    if(exSet[r.category||""]){   // kept visible, just never added to any total
+      if(!pm||mk0===pm){var kx=(r.category||"სხვა")+"|"+r.ttype;
+        if(!catX[kx])catX[kx]={category:r.category||"სხვა",ttype:r.ttype,total:0,cnt:0};
+        catX[kx].total+=+r.amount||0;catX[kx].cnt++;}
+      return;
+    }
+    var mk=mk0;
     if(mk){if(!months[mk])months[mk]={income:0,expense:0,cnt:0};months[mk].cnt++;if(r.ttype==="income")months[mk].income+=+r.amount||0;else months[mk].expense+=+r.amount||0;}
     if(pm&&mk!==pm)return;
     var a=+r.amount||0;cnt++;
@@ -1182,7 +1250,7 @@ function computeAgg(rows){
   function arr(o){return Object.keys(o).map(function(k){return {category:k,total:o[k].total,cnt:o[k].cnt};}).sort(function(x,y){return y.total-x.total;});}
   agg={inc:inc,exp:exp,ci:ci,ce:ce,cnt:cnt,dmin:dmin,dmax:dmax,
     months:Object.keys(months).map(function(k){return {mkey:k,income:months[k].income,expense:months[k].expense,cnt:months[k].cnt};}),
-    catExp:arr(catE),catInc:arr(catI),
+    catExp:arr(catE),catInc:arr(catI),catOff:offArr(catX),
     daily:Object.keys(daily).sort().map(function(d){return {d:d,delta:daily[d]};})};
 }
 /* keyset pagination: walk forward by id instead of OFFSET. Deep offsets make the
@@ -1387,6 +1455,7 @@ function changeCat(id,val){
     if(res.error){toast("შენახვა ვერ მოხერხდა: "+res.error.message,"err");return;}
     if(row&&SUM){                      // summary mode: patch tiny table + recompute in memory
       row.category=val;
+      if(_allRows)for(var j=0;j<_allRows.length;j++)if(_allRows[j].id===id){_allRows[j].category=val;break;}
       patchSummaryCategory(row,oldCat,val);
       aggFromSummary();renderDash();renderTable();
       // then reconcile with the server so the summary can never drift from the rows
