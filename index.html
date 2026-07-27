@@ -827,7 +827,7 @@ function loadRemote(done){
         else toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");
         hasData=false;
       }else hasData=(cr.count||0)>0;
-      agg=null;
+      resetAggCache(); // per-user cache, reloaded from disk on first dashboard render
       done();
     });
   });
@@ -866,18 +866,32 @@ function setDashLoading(on){
   ["k-income","k-expense","k-net","k-margin","k-income-sub","k-expense-sub","k-period","k-count"].forEach(function(id){var e=document.getElementById(id);if(e)e.classList.toggle("skel",on);});
   document.querySelectorAll("#page-dashboard .chart-body").forEach(function(b){b.classList.toggle("loading",on);});
 }
-var _rpcOk=true, _aggSig=null, _allRows=null;
+var _rpcOk=true, _aggSig=null, _allRows=null, _aggMem={}, _aggOrder=[], _aggDiskLoaded=false;
+var AGG_KEEP=12; // remember this many period/filter combinations
 function aggSig(){return (periodFilter||"")+"§"+excludedCats().join("§");}
 function aggCacheKey(){return "fin_agg_"+(currentUser?currentUser.id:"");}
-function saveAggCache(){try{localStorage.setItem(aggCacheKey(),JSON.stringify({sig:_aggSig,agg:agg}));}catch(e){}}
-function loadAggCache(sig){try{var c=JSON.parse(localStorage.getItem(aggCacheKey())||"null");if(c&&c.sig===sig)return c.agg;}catch(e){}return null;}
-function invalidateAgg(){agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
+function memPut(sig,a){if(!_aggMem[sig])_aggOrder.push(sig);_aggMem[sig]=a;while(_aggOrder.length>AGG_KEEP){delete _aggMem[_aggOrder.shift()];}}
+function saveAggCache(){
+  memPut(_aggSig,agg);
+  try{localStorage.setItem(aggCacheKey(),JSON.stringify({o:_aggOrder,m:_aggMem}));}
+  catch(e){var one={};one[_aggSig]=agg;try{localStorage.setItem(aggCacheKey(),JSON.stringify({o:[_aggSig],m:one}));}catch(e2){}}
+}
+function loadAggDisk(){
+  if(_aggDiskLoaded)return;_aggDiskLoaded=true;
+  try{var c=JSON.parse(localStorage.getItem(aggCacheKey())||"null");if(c&&c.m){_aggMem=c.m;_aggOrder=c.o||Object.keys(c.m);}}catch(e){}
+}
+function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;}
+function invalidateAgg(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
 function renderDash(){renderPeriod();renderKpis();renderCharts();setDashLoading(false);}
 function loadDashboard(done){
   var my=++_dashReq, sig=aggSig();
-  if(agg && _aggSig===sig){renderDash();if(done)done(null);return;}          // in-session cache: no recompute
-  var cached=(!agg)?loadAggCache(sig):null;
-  if(cached){agg=cached;_aggSig=sig;hasData=(agg.cnt||0)>0;renderDash();fetchDash(my,sig,true,done);return;} // instant from cache, refresh silently
+  loadAggDisk();
+  var hit=_aggMem[sig];
+  if(hit){ // already computed this period/filter → instant, no recompute
+    agg=hit;_aggSig=sig;hasData=(agg.cnt||0)>0;renderDash();
+    if(!hit._fresh){hit._fresh=1;fetchDash(my,sig,true,done);return;} // first use after refresh: verify quietly
+    if(done)done(null);return;
+  }
   setDashLoading(true);
   fetchDash(my,sig,false,done);
 }
@@ -897,7 +911,7 @@ function fetchDash(my,sig,silent,done){
     var k=(res[0].data&&res[0].data[0])||{};
     agg={inc:+k.income||0,exp:+k.expense||0,ci:+k.inc_cnt||0,ce:+k.exp_cnt||0,cnt:+k.cnt||0,dmin:k.dmin||null,dmax:k.dmax||null,
       months:res[1].data||[],catExp:res[2].data||[],catInc:res[3].data||[],daily:res[4].data||[]};
-    _aggSig=sig;hasData=agg.cnt>0;saveAggCache();renderDash();
+    agg._fresh=1;_aggSig=sig;hasData=agg.cnt>0;saveAggCache();renderDash();
     if(done)done(null);
   });
 }
@@ -923,18 +937,18 @@ function computeAgg(rows){
 }
 function loadDashboardClient(my,sig,silent,done){
   // recompute from cached rows (this session) — no refetch on period/filter changes
-  if(_allRows){if(my===_dashReq){computeAgg(_allRows);_aggSig=sig;hasData=(agg.cnt||0)>0;saveAggCache();renderDash();}if(done)done(null);return;}
+  if(_allRows){if(my===_dashReq){computeAgg(_allRows);agg._fresh=1;_aggSig=sig;hasData=(agg.cnt||0)>0;saveAggCache();renderDash();}if(done)done(null);return;}
   var PAGE=1000,CONC=6,finished=false,rows=[];
   if(!silent)showProgress("ითვლება...",null);
   sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
     if(cr.error){if(!silent)hideProgress();setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");if(done)done(cr.error);return;}
     var total=cr.count||0;hasData=total>0;
-    if(!total){agg=emptyAgg();_aggSig=sig;_allRows=[];if(!silent)hideProgress();if(my===_dashReq){saveAggCache();renderDash();}if(done)done(null);return;}
+    if(!total){agg=emptyAgg();agg._fresh=1;_aggSig=sig;_allRows=[];if(!silent)hideProgress();if(my===_dashReq){saveAggCache();renderDash();}if(done)done(null);return;}
     var pages=Math.ceil(total/PAGE),next=0,active=0,loaded=0;
     function fin(err){if(finished)return;finished=true;if(!silent)hideProgress();
       if(err){setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+err.message,"err");if(done)done(err);return;}
       _allRows=rows;
-      if(my===_dashReq){computeAgg(rows);_aggSig=sig;saveAggCache();renderDash();}
+      if(my===_dashReq){computeAgg(rows);agg._fresh=1;_aggSig=sig;saveAggCache();renderDash();}
       if(done)done(null);}
     function launch(){while(active<CONC&&next<pages&&!finished){var p=next++;active++;
       sb.from("transactions").select("txdate,category,ttype,amount").eq("user_id",currentUser.id).range(p*PAGE,p*PAGE+PAGE-1).then(function(r){
