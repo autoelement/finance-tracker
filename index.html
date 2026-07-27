@@ -1144,14 +1144,37 @@ function ensureSummaryFresh(my,done){
     heal("ჯამები ითვლება...");
   });
 }
+/* ask the transactions table directly whether a category the summary has never
+   heard of actually has rows. LIMIT 1, no counting, no custom SQL — this is the
+   one check that cannot be fooled by a stale or wrongly-built summary. */
+function anyRowsInCats(names,cb){
+  var i=0;
+  function next(){
+    if(i>=names.length){cb(null);return;}
+    var n=names[i++];
+    sb.from("transactions").select("id").eq("user_id",currentUser.id).eq("category",n).limit(1).then(function(r){
+      if(!r.error&&r.data&&r.data.length){cb(n);return;}
+      next();
+    });
+  }
+  next();
+}
 /* compare the summary's per-category totals against the rows themselves */
 function categoriesDrifted(cb){
-  var mine={};
+  var mine={},haveCat={};
   (SUM||[]).forEach(function(r){
     var k=(r.ttype==="income"?"i|":"e|")+(r.category||"სხვა");
     if(!mine[k])mine[k]={total:0,cnt:0};
     mine[k].total+=+r.total||0;mine[k].cnt+=+r.cnt||0;
+    if((+r.cnt||0)>0)haveCat[r.category||"სხვა"]=1;
   });
+  var absent=catNames().filter(function(n){return !haveCat[n];});
+  anyRowsInCats(absent,function(found){
+    if(found){_sumDiag='კატეგორია "'+found+'" ჩანაწერებში იყო, ჯამებში — არა';cb(true);return;}
+    compareCatTotals(mine,cb);
+  });
+}
+function compareCatTotals(mine,cb){
   Promise.all([
     sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"expense"}),
     sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"income"})
@@ -1515,13 +1538,43 @@ function gotoMonth(k){periodFilter=k;showTab("dashboard");}
 function renderPerfMode(){
   var el=document.getElementById("perf-mode");if(!el)return;
   var fast=_sumOk&&SUM&&SUM.length;
-  var diag=_sumDiag?'<div class="hint" style="color:var(--amber);margin-top:6px">ბოლო სერვერული დათვლა ვერ შესრულდა: '+esc(_sumDiag)+'</div>':'';
+  var diag=_sumDiag?'<div class="hint" style="color:var(--amber);margin-top:6px">'+esc(_sumDiag)+'</div>':'';
+  var btn='<div style="margin-top:10px"><button class="btn" onclick="forceRebuild()">🔄 ჯამების იძულებითი გადათვლა</button>'+
+    '<div class="hint">ჯამებს ხელახლა დაითვლის ტრანზაქციებიდან. გამოიყენე, თუ დეშბორდი და ტრანზაქციები ერთმანეთს არ ემთხვევა.</div></div>';
   var srv=_sumServerMs?'<div class="hint">ბოლო სერვერული გადათვლა: '+(_sumServerMs/1000).toFixed(1)+' წმ.</div>':'';
   el.innerHTML=(fast
     ? '<div style="color:var(--green);font-weight:600;margin-bottom:6px">⚡ სწრაფი რეჟიმი — სერვერზე დათვლილი ჯამები</div>'+
       '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს'+(_txCount>0?(' '+_txCount.toLocaleString()+' ტრანზაქციის ნაცვლად'):'')+'. თვის გადართვა და გახსნა მყისიერია.</div>'+srv
     : '<div style="color:var(--amber);font-weight:600;margin-bottom:6px">🐢 სარეზერვო რეჟიმი — ბრაუზერში ითვლება</div>'+
-      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე ყველა ჩანაწერი'+(_txCount>0?(' ('+_txCount.toLocaleString()+')'):'')+' ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>')+diag;
+      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე ყველა ჩანაწერი'+(_txCount>0?(' ('+_txCount.toLocaleString()+')'):'')+' ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>')+diag+btn;
+}
+/* recount everything from the transactions themselves. The server rebuild goes
+   first, but its result is verified — if it still disagrees with the rows, the
+   browser recounts them, which is the one path whose arithmetic we control. */
+function forceRebuild(){
+  if(!currentUser)return;
+  SUM=null;_allRows=null;_sumRebuilt=false;_sumDiag="";
+  try{localStorage.removeItem(sumCacheKey());}catch(e){}
+  invalidateAggKeepSummary();
+  showProgress("ჯამები გადაითვლება...",null);
+  function finish(msg,cls){
+    hideProgress();
+    if(SUM)aggFromSummary();
+    renderDash();renderSettings();renderTable();
+    toast(msg,cls||"ok");
+  }
+  rebuildSummary(function(err){
+    if(err){finish("გადათვლა ვერ მოხერხდა: "+err.message,"err");return;}
+    categoriesDrifted(function(drifted){
+      if(!drifted){finish("ჯამები გადათვლილია — ტრანზაქციებს ემთხვევა");return;}
+      _sumDiag="სერვერულმა გადათვლამ კატეგორიები ვერ დაამთხვია — გადაითვალა ჩანაწერებიდან";
+      _allRows=null;
+      rebuildSummaryClient(function(e2){
+        if(e2){finish("გადათვლა ვერ მოხერხდა: "+e2.message,"err");return;}
+        finish("ჯამები გადათვლილია ჩანაწერებიდან");
+      });
+    });
+  });
 }
 function renderSettings(){
   renderPerfMode();
