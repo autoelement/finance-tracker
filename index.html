@@ -347,6 +347,9 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
     <div class="section-title">თარიღის ფორმატი ბანკების მიხედვით</div>
     <div class="hint" style="margin:-6px 0 16px">თუ ატვირთვისას თარიღები არასწორად ითვლება, მიუთითე თითო ბანკის ფაილში თარიღის ფორმატი. მოქმედებს <b>ახალ</b> იმპორტებზე — არსებულის გასასწორებლად ხელახლა ატვირთე ფაილი.</div>
     <div class="cat-list" id="settings-list"></div>
+    <div class="section-title" style="margin-top:26px">ჯამები</div>
+    <div class="hint" style="margin:-6px 0 12px">დეშბორდის ციფრები წინასწარ დათვლილი ჯამებიდან იკითხება. თუ ეჭვი გაქვს, რომ ისინი ტრანზაქციებს არ ემთხვევა — გადათვალე.</div>
+    <button class="btn" onclick="forceRebuild()">↻ ჯამების გადათვლა</button>
   </div>
 
   <!-- HISTORY -->
@@ -823,7 +826,7 @@ function loadRemote(done){
     CATS=(st&&Array.isArray(st.cats)&&st.cats.length)?st.cats:defaultCats();
     imports=(st&&Array.isArray(st.imports))?st.imports:[];
     normalizeCats();rulesChanged();
-    if(!st&&!res.error)sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[]},{onConflict:"user_id"});
+    if(!st&&!res.error)sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[]},{onConflict:"user_id"}).then(function(){});
     // only a count on login — aggregates/rows load per view
     sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
       hideProgress();
@@ -1175,7 +1178,8 @@ function changeCat(id,val){
       row.category=val;
       patchSummaryCategory(row,oldCat,val);
       aggFromSummary();renderDash();renderTable();
-      sb.rpc("fin_rebuild_summary");   // keep the server copy exact, in the background
+      // then reconcile with the server so the summary can never drift from the rows
+      rebuildSummary(function(err){if(!err&&SUM){aggFromSummary();renderDash();}});
     }else if(row){
       row.category=val;
       if(_allRows)for(var i=0;i<_allRows.length;i++)if(_allRows[i].id===id){_allRows[i].category=val;break;}
@@ -1241,6 +1245,16 @@ function renderSettings(){
     h+='</select></div>';
   });
   document.getElementById("settings-list").innerHTML=h;
+}
+function forceRebuild(){
+  showProgress("ჯამები ითვლება...",null);
+  invalidateAgg();SUM=null;try{localStorage.removeItem(sumCacheKey());}catch(e){}
+  rebuildSummary(function(err){
+    hideProgress();
+    if(err){toast("გადათვლა ვერ მოხერხდა: "+err.message,"err");return;}
+    aggFromSummary();renderDash();
+    toast("ჯამები გადაითვალა ("+(SUM?SUM.length:0)+" სტრიქონი)","ok");
+  });
 }
 function setBankFmt(bankId,val){if(!SETTINGS.bankFmt)SETTINGS.bankFmt={};SETTINGS.bankFmt[bankId]=val;saveSettings();toast("შენახულია — მოქმედებს ახალ იმპორტზე","ok");}
 
