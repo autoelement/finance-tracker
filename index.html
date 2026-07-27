@@ -842,16 +842,18 @@ function loadRemote(done){
     normalizeCats();rulesChanged();
     if(!st&&!res.error)sb.from("finance_state").upsert({user_id:currentUser.id,cats:CATS,imports:imports,tx:[]},{onConflict:"user_id"}).then(function(){});
     // only a count on login — aggregates/rows load per view
-    sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
+    sb.from("transactions").select("id",{count:"estimated",head:true}).eq("user_id",currentUser.id).then(function(cr){
       hideProgress();
-      if(cr.error){
-        if((cr.error.message||"").indexOf("transaction")>-1||cr.error.code==="42P01"||cr.error.code==="PGRST205")
-          toast("ცხრილი 'transactions' ვერ მოიძებნა — გაუშვი ახალი SQL Supabase-ში","err");
-        else toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");
-        hasData=false;_txCount=0;
-      }else{_txCount=cr.count||0;hasData=_txCount>0;}
       resetAggCache();_sumOk=true;_sumLoading=false; // per-user caches
-      done();
+      if(!cr.error){_txCount=cr.count||0;hasData=_txCount>0;done();return;}
+      if((cr.error.message||"").indexOf("relation")>-1||cr.error.code==="42P01"||cr.error.code==="PGRST205"){
+        toast("ცხრილი 'transactions' ვერ მოიძებნა — გაუშვი SQL Supabase-ში","err");hasData=false;_txCount=0;done();return;
+      }
+      // counting can time out on large tables — fall back to a cheap existence probe
+      sb.from("transactions").select("id").eq("user_id",currentUser.id).limit(1).then(function(pr){
+        hasData=!pr.error&&!!(pr.data&&pr.data.length);_txCount=hasData?-1:0;   // -1 = unknown but non-empty
+        done();
+      });
     });
   });
 }
@@ -999,26 +1001,21 @@ function rebuildSummary(done){ // recompute server-side after data changes
 /* the summary must always account for exactly as many rows as the transactions
    table holds; if it doesn't, it is stale/incomplete and gets rebuilt */
 function ensureSummaryFresh(my,done){
-  sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
-    if(cr.error){if(done)done(null);return;}
-    var real=cr.count||0, inSum=0, sInc=0, sExp=0;
-    (SUM||[]).forEach(function(r){inSum+=+r.cnt||0;if(r.ttype==="income")sInc+=+r.total||0;else sExp+=+r.total||0;});
-    _txCount=real;
-    if(real===inSum){                                  // counts agree — cross-check the amounts too
-      sb.rpc("fin_kpi",{p_excluded:[],p_month:null}).then(function(k){
-        if(k.error||!k.data||!k.data[0]){if(done)done(null);return;}   // no RPC → counts check is enough
-        var d=k.data[0], ri=+d.income||0, re=+d.expense||0;
-        if(Math.abs(ri-sInc)<0.01&&Math.abs(re-sExp)<0.01){if(done)done(null);return;}
-        if(_sumRebuilt){if(done)done(null);return;}
-        _sumRebuilt=true;showProgress("ჯამები ითვლება...",null);
-        rebuildSummary(function(err){hideProgress();if(!err&&my===_dashReq){aggFromSummary();renderDash();}if(done)done(null);});
-      });
-      return;
-    }
-    if(_sumRebuilt){                                    // already tried once this session
-      if(real>0&&!inSum){legacyDashboard(my,done);return;}
+  // one indexed server-side call gives the exact count and totals — no full-table
+  // count from the client, which times out on large tables
+  var inSum=0,sInc=0,sExp=0;
+  (SUM||[]).forEach(function(r){inSum+=+r.cnt||0;if(r.ttype==="income")sInc+=+r.total||0;else sExp+=+r.total||0;});
+  sb.rpc("fin_kpi",{p_excluded:[],p_month:null}).then(function(k){
+    if(k.error||!k.data||!k.data[0]){                    // RPC unavailable → trust the summary
+      if((!SUM||!SUM.length)&&!_sumRebuilt){_sumRebuilt=true;rebuildSummary(function(err){
+        if(err||!SUM||!SUM.length){legacyDashboard(my,done);return;}
+        if(my===_dashReq){aggFromSummary();renderDash();}if(done)done(null);});return;}
       if(done)done(null);return;
     }
+    var d=k.data[0], real=+d.cnt||0, ri=+d.income||0, re=+d.expense||0;
+    _txCount=real;
+    if(real===inSum&&Math.abs(ri-sInc)<0.01&&Math.abs(re-sExp)<0.01){if(done)done(null);return;} // consistent
+    if(_sumRebuilt){if(real>0&&!inSum)legacyDashboard(my,done);else if(done)done(null);return;}
     _sumRebuilt=true;
     showProgress("ჯამები ითვლება...",null);
     rebuildSummary(function(err){
@@ -1033,7 +1030,7 @@ function loadDashboard(done){
   var my=++_dashReq;
   if(_sumOk){
     if(SUM&&SUM.length){aggFromSummary();renderDash();if(done)done(null);return;}   // instant, in-memory
-    try{var c=(_txCount>0)?JSON.parse(localStorage.getItem(sumCacheKey())||"null"):null; // ignore stale cache when the account has no rows
+    try{var c=(_txCount!==0)?JSON.parse(localStorage.getItem(sumCacheKey())||"null"):null; // ignore stale cache when the account has no rows
       if(c&&c.length){SUM=c;aggFromSummary();renderDash();}else setDashLoading(true);}catch(e){setDashLoading(true);}
     if(_sumLoading){if(done)done(null);return;}
     _sumLoading=true;
@@ -1104,30 +1101,42 @@ function computeAgg(rows){
 function loadDashboardClient(my,sig,silent,done){
   // recompute from cached rows (this session) — no refetch on period/filter changes
   if(_allRows){if(my===_dashReq){computeAgg(_allRows);agg._fresh=1;_aggSig=sig;hasData=(agg.cnt||0)>0;saveAggCache();renderDash();}if(done)done(null);return;}
-  var PAGE=1000,CONC=6,finished=false,rows=[],seen={};
+  // keyset pagination: walk forward by id instead of OFFSET. Deep offsets make the
+  // database re-scan everything before each page and hit the statement timeout.
+  var PAGE=1000,rows=[],lastId=null,stop=false;
   if(!silent)showProgress("ითვლება...",null);
-  sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).then(function(cr){
-    if(cr.error){if(!silent)hideProgress();setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");if(done)done(cr.error);return;}
-    var total=cr.count||0;hasData=total>0;
-    if(!total){agg=emptyAgg();agg._fresh=1;_aggSig=sig;_allRows=[];if(!silent)hideProgress();if(my===_dashReq){saveAggCache();renderDash();}if(done)done(null);return;}
-    var pages=Math.ceil(total/PAGE),next=0,active=0,loaded=0;
-    function fin(err){if(finished)return;finished=true;if(!silent)hideProgress();
-      if(err){setDashLoading(false);toast("ჩატვირთვის შეცდომა: "+err.message,"err");if(done)done(err);return;}
-      _allRows=rows;
-      if(my===_dashReq){computeAgg(rows);agg._fresh=1;_aggSig=sig;saveAggCache();renderDash();}
-      if(done)done(null);}
-    function launch(){while(active<CONC&&next<pages&&!finished){var p=next++;active++;
-      // a stable ORDER BY is required: paginating an unordered query can repeat
-      // rows across pages (inflating totals) and skip others
-      sb.from("transactions").select("id,txdate,category,ttype,amount").eq("user_id",currentUser.id)
-        .order("id",{ascending:true}).range(p*PAGE,p*PAGE+PAGE-1).then(function(r){
-        active--;if(finished)return;if(r.error){fin(r.error);return;}
-        var d=r.data||[];
-        for(var i=0;i<d.length;i++){var row=d[i];if(row.id&&seen[row.id])continue;if(row.id)seen[row.id]=1;rows.push(row);}
-        loaded+=d.length;if(!silent){progMsg("ითვლება... "+loaded.toLocaleString()+" / "+total.toLocaleString());if(total)setProgress(loaded/total*100);}
-        if(next>=pages&&active===0){fin(null);return;}launch();});}}
-    launch();
-  });
+  function fin(err){
+    if(!silent)hideProgress();
+    if(err){
+      setDashLoading(false);
+      toast(/timeout/i.test(err.message||"")
+        ? "ბაზამ ვერ მოასწრო დამუშავება — ჩართე სწრაფი რეჟიმი (პარამეტრები → SQL)"
+        : ("ჩატვირთვის შეცდომა: "+err.message),"err");
+      if(done)done(err);return;
+    }
+    _allRows=rows;hasData=rows.length>0;
+    if(my===_dashReq){computeAgg(rows);agg._fresh=1;_aggSig=sig;saveAggCache();renderDash();}
+    if(done)done(null);
+  }
+  function next(){
+    var q=sb.from("transactions").select("id,txdate,category,ttype,amount").eq("user_id",currentUser.id)
+      .order("id",{ascending:true}).limit(PAGE);
+    if(lastId!==null)q=q.gt("id",lastId);
+    q.then(function(r){
+      if(stop)return;
+      if(r.error){
+        if(/timeout/i.test(r.error.message||"")&&PAGE>200){PAGE=Math.floor(PAGE/2);setTimeout(next,150);return;} // back off
+        stop=true;fin(r.error);return;
+      }
+      var d=r.data||[];
+      for(var i=0;i<d.length;i++)rows.push(d[i]);
+      if(d.length)lastId=d[d.length-1].id;
+      if(!silent)progMsg("ითვლება... "+rows.length.toLocaleString());
+      if(d.length<PAGE){stop=true;fin(null);return;}
+      setTimeout(next,0);
+    });
+  }
+  next();
 }
 function render(){loadDashboard(function(){renderTable();});}
 function renderPeriod(){
@@ -1320,9 +1329,9 @@ function renderPerfMode(){
   var fast=_sumOk&&SUM&&SUM.length;
   el.innerHTML=fast
     ? '<div style="color:var(--green);font-weight:600;margin-bottom:6px">⚡ სწრაფი რეჟიმი — სერვერზე დათვლილი ჯამები</div>'+
-      '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს '+(_txCount||0).toLocaleString()+' ტრანზაქციის ნაცვლად. თვის გადართვა და გახსნა მყისიერია.</div>'
+      '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს'+(_txCount>0?(' '+_txCount.toLocaleString()+' ტრანზაქციის ნაცვლად'):'')+'. თვის გადართვა და გახსნა მყისიერია.</div>'
     : '<div style="color:var(--amber);font-weight:600;margin-bottom:6px">🐢 სარეზერვო რეჟიმი — ბრაუზერში ითვლება</div>'+
-      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე '+(_txCount||0).toLocaleString()+' ჩანაწერი ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>';
+      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე ყველა ჩანაწერი'+(_txCount>0?(' ('+_txCount.toLocaleString()+')'):'')+' ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>';
 }
 function renderSettings(){
   renderPerfMode();
