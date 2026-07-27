@@ -1300,6 +1300,7 @@ function replaceImport(id){
   sb.from("transactions").delete().eq("user_id",currentUser.id).eq("import_id",id).then(function(res){
     hideProgress();
     if(res.error){toast("ძველის წაშლა ვერ მოხერხდა","err");return;}
+    invalidateAgg();
     pendingBank = im.bank==="BOG"?"bog":(im.bank==="TBC"?"tbc":"other");
     document.getElementById("file-input").click();
   });
@@ -1364,7 +1365,7 @@ function saveManual(){
     if(err){toast("შენახვა ვერ მოხერხდა: "+err.message,"err");return;}
     var im=imports.find(function(x){return x.id==="manual";});
     if(im)im.count=(im.count||0)+1; else imports.push({id:"manual",bank:"ხელით",file:"ხელით დამატებული",ts:Date.now(),count:1});
-    saveAll();hasData=true;closeManual();
+    saveAll();invalidateAgg();hasData=true;closeManual();
     showData();showTab("dashboard");
     toast("დაემატა: "+fmt(Math.abs(amount)),"ok");
   });
