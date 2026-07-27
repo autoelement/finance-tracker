@@ -308,6 +308,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
         <select id="filter-type" onchange="tablePage=0;renderTable()"><option value="">ყველა ტიპი</option><option value="income">შემოსავალი</option><option value="expense">ხარჯი</option></select>
         <select id="filter-cat" onchange="tablePage=0;renderTable()"><option value="">ყველა კატეგორია</option></select>
         <select id="filter-bank" onchange="tablePage=0;renderTable()"><option value="">ყველა ბანკი</option></select>
+        <select id="filter-incl" onchange="tablePage=0;renderTable()"><option value="">ითვლება + არ ითვლება</option><option value="on">✓ ითვლება ანგარიშებში</option><option value="off">✕ არ ითვლება</option></select>
         <div class="h-spacer"></div>
         <button class="btn btn-sm" onclick="openManual()">＋ ხელით</button>
         <button class="btn btn-sm" onclick="exportCsv()">⤓ CSV</button>
@@ -959,6 +960,7 @@ function renderCatSummary(){
 function filterByCat(cat,type){
   document.getElementById("filter-cat").value=cat;
   document.getElementById("filter-type").value=type;
+  document.getElementById("filter-incl").value="";   // don't fight the category we just picked
   tablePage=0;renderTable();
   var el=document.getElementById("tbody");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -1383,19 +1385,37 @@ function renderFilters(){
   var sbk=document.getElementById("filter-bank"),curb=sbk.value;sbk.innerHTML='<option value="">ყველა ბანკი</option>';
   Object.keys(banks).sort().forEach(function(b){var o=document.createElement("option");o.value=b;o.textContent=b;sbk.appendChild(o);});sbk.value=curb;
 }
+/* the transaction filters, in one place — the table, its count and the CSV
+   export all go through here so they can never drift apart */
+function txFilterState(){
+  function v(id){var e=document.getElementById(id);return e?(e.value||"").trim():"";}
+  return {q:v("search"),type:v("filter-type"),cat:v("filter-cat"),bank:v("filter-bank"),incl:v("filter-incl")};
+}
+function pgInList(vals){   // PostgREST in-list literal: ("a","b")
+  return "("+vals.map(function(v){return '"'+String(v).replace(/"/g,'\\"')+'"';}).join(",")+")";
+}
+function applyTxFilters(query,f){
+  if(f.type)query=query.eq("ttype",f.type);
+  if(f.cat)query=query.eq("category",f.cat);
+  if(f.bank)query=query.eq("bank",f.bank);
+  if(f.q)query=query.ilike("descr","%"+f.q+"%");
+  if(f.incl){
+    // "counts in reports" is a category setting, so it becomes a category list.
+    // Categories the settings no longer know about count, same as everywhere else.
+    var ex=excludedCats();
+    if(f.incl==="off")query=query.in("category",ex.length?ex:["__არცერთი__"]);   // nothing excluded → match nothing
+    else if(ex.length)query=query.not("category","in",pgInList(ex));
+  }
+  if(periodFilter){var rg=monthRange(periodFilter);if(rg)query=query.gte("txdate",rg[0]).lte("txdate",rg[1]);}
+  return query;
+}
 function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==="date"||k==="amount")?-1:1;}tablePage=0;renderTable();}
 function gotoPage(p){tablePage=p;renderTable();}
 var _tblReq=0;
 function renderTable(){
   renderFilters();
-  var q=document.getElementById("search").value.trim(),ft=document.getElementById("filter-type").value,fc=document.getElementById("filter-cat").value,fb=document.getElementById("filter-bank").value;
   var col={date:"txdate",desc:"descr",category:"category",bank:"bank",type:"ttype",amount:"amount"}[sortKey]||"txdate";
-  var query=sb.from("transactions").select("id,txdate,descr,category,ttype,amount,bank",{count:"exact"}).eq("user_id",currentUser.id);
-  if(ft)query=query.eq("ttype",ft);
-  if(fc)query=query.eq("category",fc);
-  if(fb)query=query.eq("bank",fb);
-  if(q)query=query.ilike("descr","%"+q+"%");
-  if(periodFilter){var rg=monthRange(periodFilter);if(rg)query=query.gte("txdate",rg[0]).lte("txdate",rg[1]);}
+  var query=applyTxFilters(sb.from("transactions").select("id,txdate,descr,category,ttype,amount,bank",{count:"exact"}).eq("user_id",currentUser.id),txFilterState());
   query=query.order(col,{ascending:sortDir>0,nullsFirst:false}).order("id",{ascending:true}).range(tablePage*PAGE_SIZE,tablePage*PAGE_SIZE+PAGE_SIZE-1);
   var my=++_tblReq;
   query.then(function(res){
@@ -1904,15 +1924,10 @@ function saveManual(){
 /* ============ EXPORT ============ */
 function exportCsv(){
   if(!hasData){toast("ჩანაწერი არ არის","err");return;}
-  var q=document.getElementById("search").value.trim(),ft=document.getElementById("filter-type").value,fc=document.getElementById("filter-cat").value,fb=document.getElementById("filter-bank").value;
-  function base(){var query=sb.from("transactions").select("txdate,descr,category,bank,ttype,amount").eq("user_id",currentUser.id);
-    if(ft)query=query.eq("ttype",ft);if(fc)query=query.eq("category",fc);if(fb)query=query.eq("bank",fb);if(q)query=query.ilike("descr","%"+q+"%");
-    if(periodFilter){var rg=monthRange(periodFilter);if(rg)query=query.gte("txdate",rg[0]).lte("txdate",rg[1]);}
-    return query.order("txdate",{ascending:true}).order("id",{ascending:true});}
-  function countQuery(){var query=sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id);
-    if(ft)query=query.eq("ttype",ft);if(fc)query=query.eq("category",fc);if(fb)query=query.eq("bank",fb);if(q)query=query.ilike("descr","%"+q+"%");
-    if(periodFilter){var rg=monthRange(periodFilter);if(rg)query=query.gte("txdate",rg[0]).lte("txdate",rg[1]);}
-    return query;}
+  var f=txFilterState();
+  function base(){return applyTxFilters(sb.from("transactions").select("txdate,descr,category,bank,ttype,amount").eq("user_id",currentUser.id),f)
+    .order("txdate",{ascending:true}).order("id",{ascending:true});}
+  function countQuery(){return applyTxFilters(sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id),f);}
   var CAP=300000,PAGE=1000,CONC=6,finished=false,chunks=[],loaded=0; // PAGE must not exceed the server row cap
   function esc2(c){var s=""+c;return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
   function line(t){return [t.txdate||"",t.descr||"",t.category||"",catIncluded(t.category)?"ითვლება":"არ ითვლება",t.bank||"სხვა",t.ttype==="income"?"შემოსავალი":"ხარჯი",(t.ttype==="income"?"":"-")+(t.amount||0)].map(esc2).join(",");}
