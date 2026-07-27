@@ -739,7 +739,7 @@ function finishImport(records,skipped,importId,bankId,fname){
       if(err){toast("ნაწილი შენახვისას შეცდომა: "+err.message,"err");}
       else toast(bankName+": დამუშავდა "+records.length.toLocaleString()+" ტრანზაქცია (დუბლიკატები ავტომ. გამოტოვდა)","ok");
       showData();showTab("dashboard");
-    });
+    },records,1);
   });
 }
 
@@ -798,7 +798,7 @@ function applyMapping(){
       if(err){toast("შენახვისას შეცდომა: "+err.message,"err");}
       else toast("დამუშავდა "+res.records.length.toLocaleString()+" ტრანზაქცია","ok");
       showData();showTab("dashboard");
-    });
+    },res.records,1);
   });
 }
 
@@ -907,12 +907,19 @@ function loadAggDisk(){
 }
 function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;SUM=null;}
 function invalidateAgg(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
-// data changed → drop caches and have the server rebuild the summary once
-function afterDataChange(cb){
-  invalidateAgg();SUM=null;
-  try{localStorage.removeItem(sumCacheKey());}catch(e){}
+/* data changed → refresh the summary. When the exact records that changed are
+   known, fold them in directly; otherwise rebuild from scratch. */
+function afterDataChange(cb,records,sign){
+  var hadSum=SUM&&SUM.length;
+  invalidateAggKeepSummary();
+  if(hadSum&&records&&records.length){
+    mergeIntoSummary(records,sign||1,function(){if(cb)cb();});
+    return;
+  }
+  SUM=null;try{localStorage.removeItem(sumCacheKey());}catch(e){}
   rebuildSummary(function(){if(cb)cb();});
 }
+function invalidateAggKeepSummary(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
 function renderDash(){renderPeriod();renderKpis();renderCharts();renderCatSummary();setDashLoading(false);}
 /* per-category totals for the current period — directly comparable with the transactions table */
 function renderCatSummary(){
@@ -1033,7 +1040,33 @@ function rebuildSummaryClient(done){
     });
   }
   if(_allRows&&_allRows.length){build(_allRows);return;}
-  fetchAllRows(function(err,rows){if(err){if(done)done(err);return;}_allRows=rows;build(rows);});
+  fetchAllRows(function(err,rows){if(err){if(done)done(err);return;}_allRows=rows;build(rows);},
+    function(n){progMsg("ჯამები ითვლება... "+n.toLocaleString()+" ჩანაწერი");});
+}
+/* fold a known set of records into the stored summary instead of rescanning
+   everything — used after an import or a single delete */
+function mergeIntoSummary(records,sign,done){
+  if(!_sumOk||!records||!records.length){if(done)done(null);return;}
+  if(!SUM){if(done)done(null);return;}
+  var touched={};
+  records.forEach(function(r){
+    var ds=r.dateStr||r.txdate, mk=(ds&&ds!=="—")?(""+ds).slice(0,7):"უცნობი";
+    var cat=r.category||"სხვა", tt=r.type||r.ttype||"expense", amt=Math.abs(+r.amount||0);
+    var k=mk+"|"+cat+"|"+tt, row=null;
+    for(var i=0;i<SUM.length;i++){var s=SUM[i];if(s.mkey===mk&&s.category===cat&&s.ttype===tt){row=s;break;}}
+    if(!row){if(sign<0)return;row={mkey:mk,category:cat,ttype:tt,total:0,cnt:0,dmin:null,dmax:null};SUM.push(row);}
+    row.total=(+row.total||0)+sign*amt;row.cnt=(+row.cnt||0)+sign;
+    if(sign>0&&ds&&ds!=="—"){if(!row.dmin||ds<row.dmin)row.dmin=ds;if(!row.dmax||ds>row.dmax)row.dmax=ds;}
+    touched[k]=row;
+  });
+  var rows=Object.keys(touched).map(function(k){var r=touched[k];
+    return {user_id:currentUser.id,mkey:r.mkey,category:r.category,ttype:r.ttype,total:r.total,cnt:r.cnt,dmin:r.dmin,dmax:r.dmax};});
+  SUM=SUM.filter(function(r){return (+r.cnt||0)>0;});
+  try{localStorage.setItem(sumCacheKey(),JSON.stringify(SUM));}catch(e){}
+  if(!rows.length){if(done)done(null);return;}
+  sb.from("fin_summary").upsert(rows,{onConflict:"user_id,mkey,category,ttype"}).then(function(r){
+    if(done)done(r.error||null);
+  });
 }
 /* the summary must always account for exactly as many rows as the transactions
    table holds; if it doesn't, it is stale/incomplete and gets rebuilt */
@@ -1585,16 +1618,20 @@ function loadImportDetail(id){
 }
 function delOneTx(txid,impId){
   if(!confirm("წავშალო ეს ტრანზაქცია?"))return;
-  sb.from("transactions").delete().eq("user_id",currentUser.id).eq("id",txid).then(function(res){
-    if(res.error){toast("წაშლა ვერ მოხერხდა: "+res.error.message,"err");return;}
-    var im=imports.find(function(x){return x.id===impId;});
-    if(im){im.count=Math.max(0,(im.count||1)-1);if(!im.count)imports=imports.filter(function(x){return x.id!==impId;});}
-    saveAll();afterDataChange(function(){});
-    renderHistory();
-    var row=document.getElementById("id-"+impId);
-    if(row){row.style.display="";var c=document.getElementById("ic-"+impId);if(c)c.textContent="▾";loadImportDetail(impId);}
-    loadDashboard(function(){});
-    toast("წაიშალა","ok");
+  // read the row first so its amount can be subtracted from the summary
+  sb.from("transactions").select("txdate,category,ttype,amount").eq("user_id",currentUser.id).eq("id",txid).maybeSingle().then(function(pre){
+    var old=(pre&&pre.data)?pre.data:null;
+    sb.from("transactions").delete().eq("user_id",currentUser.id).eq("id",txid).then(function(res){
+      if(res.error){toast("წაშლა ვერ მოხერხდა: "+res.error.message,"err");return;}
+      var im=imports.find(function(x){return x.id===impId;});
+      if(im){im.count=Math.max(0,(im.count||1)-1);if(!im.count)imports=imports.filter(function(x){return x.id!==impId;});}
+      saveAll();
+      afterDataChange(function(){loadDashboard(function(){});},old?[old]:null,-1);
+      renderHistory();
+      var drow=document.getElementById("id-"+impId);
+      if(drow){drow.style.display="";var c=document.getElementById("ic-"+impId);if(c)c.textContent="▾";loadImportDetail(impId);}
+      toast("წაიშალა","ok");
+    });
   });
 }
 function delImport(id){
@@ -1686,7 +1723,7 @@ function saveManual(){
     var im=imports.find(function(x){return x.id==="manual";});
     if(im)im.count=(im.count||0)+1; else imports.push({id:"manual",bank:"ხელით",file:"ხელით დამატებული",ts:Date.now(),count:1});
     saveAll();hasData=true;closeManual();
-    afterDataChange(function(){showData();showTab("dashboard");});
+    afterDataChange(function(){showData();showTab("dashboard");},[rec],1);
     toast("დაემატა: "+fmt(Math.abs(amount)),"ok");
   });
 }
