@@ -1160,11 +1160,55 @@ function renderHistory(){
   var h="";imports.slice().sort(function(a,b){return b.ts-a.ts;}).forEach(function(im){
     var d=new Date(im.ts);var p=function(x){return(x<10?"0":"")+x;};
     var ds=d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());
-    h+='<tr><td class="mono">'+ds+'</td><td><span class="pill bank">'+esc(im.bank)+'</span></td><td title="'+esc(im.file)+'">'+esc(im.file).slice(0,40)+'</td><td style="text-align:right">'+im.count+'</td>'+
-       '<td style="text-align:right;white-space:nowrap"><button class="btn btn-sm" onclick="replaceImport(\''+im.id+'\')">ჩანაცვლება</button> '+
-       '<button class="btn btn-sm btn-danger" onclick="delImport(\''+im.id+'\')">წაშლა</button></td></tr>';
+    var manual=im.id==="manual";
+    h+='<tr'+(manual?' class="clickable" onclick="toggleImport(\''+im.id+'\')"':'')+'>'+
+       '<td class="mono">'+(manual?'<span id="ic-'+im.id+'" style="color:var(--text3);display:inline-block;width:14px">▸</span> ':'')+ds+'</td>'+
+       '<td><span class="pill bank">'+esc(im.bank)+'</span></td><td title="'+esc(im.file)+'">'+esc(im.file).slice(0,40)+'</td><td style="text-align:right">'+im.count+'</td>'+
+       '<td style="text-align:right;white-space:nowrap">'+
+       (manual?'':'<button class="btn btn-sm" onclick="replaceImport(\''+im.id+'\')">ჩანაცვლება</button> ')+
+       '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();delImport(\''+im.id+'\')">წაშლა</button></td></tr>';
+    if(manual)h+='<tr id="id-'+im.id+'" style="display:none"><td colspan="5" style="padding:0;background:var(--bg3)"><div id="idc-'+im.id+'" style="padding:10px 16px">…</div></td></tr>';
   });
   tb.innerHTML=h;
+}
+function toggleImport(id){
+  var row=document.getElementById("id-"+id),caret=document.getElementById("ic-"+id);
+  if(!row)return;
+  if(row.style.display==="none"){row.style.display="";if(caret)caret.textContent="▾";loadImportDetail(id);}
+  else{row.style.display="none";if(caret)caret.textContent="▸";}
+}
+function loadImportDetail(id){
+  var cont=document.getElementById("idc-"+id);
+  cont.innerHTML='<span style="color:var(--text3)">იტვირთება...</span>';
+  sb.from("transactions").select("id,txdate,descr,category,ttype,amount,bank").eq("user_id",currentUser.id).eq("import_id",id)
+    .order("txdate",{ascending:false}).limit(500).then(function(res){
+    if(res.error){cont.innerHTML='<span style="color:var(--red)">შეცდომა: '+esc(res.error.message)+'</span>';return;}
+    var d=res.data||[];
+    if(!d.length){cont.innerHTML='<span style="color:var(--text3)">ჩანაწერი არ არის.</span>';return;}
+    var h='<div style="font-size:11px;color:var(--text3);margin-bottom:6px">'+d.length+' ჩანაწერი</div><table style="width:100%;font-size:12px"><tbody>';
+    d.forEach(function(t){var incm=t.ttype==="income";
+      h+='<tr><td style="padding:5px 8px">'+(t.txdate||"—")+'</td>'+
+         '<td style="padding:5px 8px">'+esc(t.descr||"")+'</td>'+
+         '<td style="padding:5px 8px;color:var(--text3)">'+esc(t.category||"")+'</td>'+
+         '<td class="amt '+(incm?"green":"red")+'" style="padding:5px 8px">'+(incm?"+":"−")+fmt(Math.abs(+t.amount||0))+'</td>'+
+         '<td style="padding:5px 8px;text-align:right"><button class="cat-del" title="წაშლა" onclick="delOneTx(\''+t.id+'\',\''+id+'\')">🗑</button></td></tr>';
+    });
+    h+='</tbody></table>';cont.innerHTML=h;
+  });
+}
+function delOneTx(txid,impId){
+  if(!confirm("წავშალო ეს ტრანზაქცია?"))return;
+  sb.from("transactions").delete().eq("user_id",currentUser.id).eq("id",txid).then(function(res){
+    if(res.error){toast("წაშლა ვერ მოხერხდა: "+res.error.message,"err");return;}
+    var im=imports.find(function(x){return x.id===impId;});
+    if(im){im.count=Math.max(0,(im.count||1)-1);if(!im.count)imports=imports.filter(function(x){return x.id!==impId;});}
+    saveAll();invalidateAgg();
+    renderHistory();
+    var row=document.getElementById("id-"+impId);
+    if(row){row.style.display="";var c=document.getElementById("ic-"+impId);if(c)c.textContent="▾";loadImportDetail(impId);}
+    loadDashboard(function(){});
+    toast("წაიშალა","ok");
+  });
 }
 function delImport(id){
   var im=imports.find(function(x){return x.id===id;});if(!im)return;
