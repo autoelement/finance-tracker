@@ -355,7 +355,10 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
     <div class="section-title">თარიღის ფორმატი ბანკების მიხედვით</div>
     <div class="hint" style="margin:-6px 0 16px">თუ ატვირთვისას თარიღები არასწორად ითვლება, მიუთითე თითო ბანკის ფაილში თარიღის ფორმატი. მოქმედებს <b>ახალ</b> იმპორტებზე — არსებულის გასასწორებლად ხელახლა ატვირთე ფაილი.</div>
     <div class="cat-list" id="settings-list"></div>
-    <div class="section-title" style="margin-top:26px">ჯამები</div>
+    <div class="section-title" style="margin-top:26px">დათვლის რეჟიმი</div>
+    <div id="perf-mode" class="cat-card" style="margin-bottom:16px"></div>
+
+    <div class="section-title">ჯამები</div>
     <div class="hint" style="margin:-6px 0 12px">დეშბორდის ციფრები წინასწარ დათვლილი ჯამებიდან იკითხება. თუ ეჭვი გაქვს, რომ ისინი ტრანზაქციებს არ ემთხვევა — გადათვალე.</div>
     <button class="btn" onclick="forceRebuild()">↻ ჯამების გადათვლა</button>
     <button class="btn" onclick="verifySummary()" style="margin-left:8px">🔍 შემოწმება (რაოდენობა)</button>
@@ -1312,7 +1315,17 @@ function loadMonthDetail(mk){
 function gotoMonth(k){periodFilter=k;showTab("dashboard");}
 
 /* ============ SETTINGS UI ============ */
+function renderPerfMode(){
+  var el=document.getElementById("perf-mode");if(!el)return;
+  var fast=_sumOk&&SUM&&SUM.length;
+  el.innerHTML=fast
+    ? '<div style="color:var(--green);font-weight:600;margin-bottom:6px">⚡ სწრაფი რეჟიმი — სერვერზე დათვლილი ჯამები</div>'+
+      '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს '+(_txCount||0).toLocaleString()+' ტრანზაქციის ნაცვლად. თვის გადართვა და გახსნა მყისიერია.</div>'
+    : '<div style="color:var(--amber);font-weight:600;margin-bottom:6px">🐢 სარეზერვო რეჟიმი — ბრაუზერში ითვლება</div>'+
+      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე '+(_txCount||0).toLocaleString()+' ჩანაწერი ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>';
+}
 function renderSettings(){
+  renderPerfMode();
   var banks=[["bog","🟠 საქართველოს ბანკი (BOG)"],["tbc","🔵 თიბისი ბანკი (TBC)"],["other","📄 სხვა / ავტომატური"]];
   var fmts=[["auto","ავტომატური"],["DMY","დღე-თვე-წელი (DD-MM-YY)"],["MDY","თვე-დღე-წელი (MM-DD-YY)"],["YMD","წელი-თვე-დღე (YYYY-MM-DD)"]];
   var h="";
