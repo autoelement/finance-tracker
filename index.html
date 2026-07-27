@@ -954,6 +954,8 @@ function filterByCat(cat,type){
    Everything on the dashboard derives from it in memory, so no query ever
    scans the full transaction table again. ---- */
 var SUM=null, _sumOk=true, _sumLoading=false, _txCount=0, _sumRebuilt=false;
+var SUM_RPC_WAIT=180000;          // how long the server-side rebuild may take
+var _sumDiag="", _sumServerMs=0;  // why the browser had to do the counting
 function sumCacheKey(){return "fin_sum_"+(currentUser?currentUser.id:"");}
 function aggFromSummary(){
   var ex={};excludedCats().forEach(function(n){ex[n]=1;});
@@ -1000,21 +1002,36 @@ function loadSummary(done){
 }
 function rebuildSummary(done){ // recompute after data changes
   if(!_sumOk){if(done)done(null);return;}
-  var settled=false;
-  function finish(err){if(settled)return;settled=true;if(done)done(err);}
-  // watchdog: a server-side rebuild can exceed the database statement timeout on
-  // large tables — never let the UI sit waiting, build it from the client instead
-  var wd=setTimeout(function(){if(!settled)rebuildSummaryClient(finish);},12000);
+  var settled=false,t0=Date.now(),tick=null;
+  function stopTick(){if(tick){clearInterval(tick);tick=null;}}
+  function finish(err){if(settled)return;settled=true;stopTick();if(done)done(err);}
+  progMsg("ჯამები ითვლება სერვერზე...");
+  tick=setInterval(function(){
+    progMsg("ჯამები ითვლება სერვერზე... "+Math.round((Date.now()-t0)/1000)+" წმ");
+  },1000);
+  // the server groups the whole table in one statement — orders of magnitude
+  // cheaper than paging every row into the browser, so give it real time. Fall
+  // back only when it actually fails (missing function, statement timeout) or stalls.
+  var wd=setTimeout(function(){
+    if(settled)return;
+    stopTick();_sumDiag="სერვერზე დათვლა "+Math.round(SUM_RPC_WAIT/1000)+" წამში ვერ დასრულდა";
+    rebuildSummaryClient(finish);
+  },SUM_RPC_WAIT);
   sb.rpc("fin_rebuild_summary").then(function(res){
     if(settled)return;
-    if(res.error){clearTimeout(wd);rebuildSummaryClient(finish);return;}
-    clearTimeout(wd);
+    clearTimeout(wd);stopTick();
+    if(res.error){
+      _sumDiag="სერვერი: "+(res.error.message||"უცნობი შეცდომა");
+      rebuildSummaryClient(finish);return;
+    }
+    _sumDiag="";_sumServerMs=Date.now()-t0;
     loadSummary(function(err){finish(err);});
   });
 }
 /* build the summary in the browser from the rows we can already page through,
    then store it — avoids one long server-side statement entirely */
 function rebuildSummaryClient(done){
+  if(!_sumDiag)_sumDiag="სერვერული დათვლა მიუწვდომელია";
   progMsg("ჯამები ითვლება (ჩანაწერებიდან)...");
   function build(rows){
     var m={};
@@ -1170,10 +1187,10 @@ function computeAgg(rows){
 }
 /* keyset pagination: walk forward by id instead of OFFSET. Deep offsets make the
    database re-scan everything before each page and hit the statement timeout. */
-function fetchAllRows(done,onProg){
-  var PAGE=1000,rows=[],lastId=null,stop=false;
+function walkKeyset(narrow,onBatch,done){
+  var PAGE=1000,lastId=null,stop=false;
   function next(){
-    var q=sb.from("transactions").select("id,txdate,category,ttype,amount").eq("user_id",currentUser.id)
+    var q=narrow(sb.from("transactions").select("id,txdate,category,ttype,amount").eq("user_id",currentUser.id))
       .order("id",{ascending:true}).limit(PAGE);
     if(lastId!==null)q=q.gt("id",lastId);
     q.then(function(r){
@@ -1183,14 +1200,46 @@ function fetchAllRows(done,onProg){
         stop=true;done(r.error);return;
       }
       var d=r.data||[];
-      for(var i=0;i<d.length;i++)rows.push(d[i]);
       if(d.length)lastId=d[d.length-1].id;
-      if(onProg)onProg(rows.length);
-      if(d.length<PAGE){stop=true;done(null,rows);return;}
+      onBatch(d);
+      if(d.length<PAGE){stop=true;done(null);return;}
       setTimeout(next,0);
     });
   }
   next();
+}
+function nextMonthStart(m){
+  var y=+m.slice(0,4),mo=+m.slice(5,7)+1;if(mo>12){mo=1;y++;}
+  return y+"-"+(mo<10?"0":"")+mo+"-01";
+}
+/* One sequential stream costs a round trip per 1000 rows — half a million rows
+   means ~500 of them back to back. Split the walk by month and run a few streams
+   at once; the rows come back interleaved, which none of the callers care about. */
+function fetchAllRows(done,onProg){
+  var rows=[],fired=false;
+  function push(d){for(var i=0;i<d.length;i++)rows.push(d[i]);if(onProg)onProg(rows.length);}
+  function finish(err){if(fired)return;fired=true;done(err,err?null:rows);}
+  function serial(){walkKeyset(function(q){return q;},push,finish);}
+  sb.rpc("fin_monthly",{p_excluded:[]}).then(function(res){
+    var data=(!res.error&&res.data)||null;
+    var ms=data?data.map(function(r){return r&&r.mkey;}):null;
+    if(!ms||!ms.length||!ms.every(function(m){return /^\d{4}-\d{2}$/.test(m||"");})){serial();return;}
+    var queue=ms.slice();
+    queue.push(null);   // rows without a date belong to no month bucket
+    var live=Math.min(6,queue.length);
+    function lane(){
+      if(fired)return;
+      if(!queue.length){live--;if(live===0)finish(null);return;}
+      var m=queue.shift();
+      walkKeyset(function(q){
+        return m===null?q.is("txdate",null):q.gte("txdate",m+"-01").lt("txdate",nextMonthStart(m));
+      },push,function(err){
+        if(err){finish(err);return;}
+        lane();
+      });
+    }
+    for(var i=0;i<live;i++)lane();
+  });
 }
 function loadDashboardClient(my,sig,silent,done){
   // recompute from cached rows (this session) — no refetch on period/filter changes
@@ -1397,11 +1446,13 @@ function gotoMonth(k){periodFilter=k;showTab("dashboard");}
 function renderPerfMode(){
   var el=document.getElementById("perf-mode");if(!el)return;
   var fast=_sumOk&&SUM&&SUM.length;
-  el.innerHTML=fast
+  var diag=_sumDiag?'<div class="hint" style="color:var(--amber);margin-top:6px">ბოლო სერვერული დათვლა ვერ შესრულდა: '+esc(_sumDiag)+'</div>':'';
+  var srv=_sumServerMs?'<div class="hint">ბოლო სერვერული გადათვლა: '+(_sumServerMs/1000).toFixed(1)+' წმ.</div>':'';
+  el.innerHTML=(fast
     ? '<div style="color:var(--green);font-weight:600;margin-bottom:6px">⚡ სწრაფი რეჟიმი — სერვერზე დათვლილი ჯამები</div>'+
-      '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს'+(_txCount>0?(' '+_txCount.toLocaleString()+' ტრანზაქციის ნაცვლად'):'')+'. თვის გადართვა და გახსნა მყისიერია.</div>'
+      '<div class="hint">დეშბორდი '+SUM.length.toLocaleString()+' შემაჯამებელ სტრიქონს კითხულობს'+(_txCount>0?(' '+_txCount.toLocaleString()+' ტრანზაქციის ნაცვლად'):'')+'. თვის გადართვა და გახსნა მყისიერია.</div>'+srv
     : '<div style="color:var(--amber);font-weight:600;margin-bottom:6px">🐢 სარეზერვო რეჟიმი — ბრაუზერში ითვლება</div>'+
-      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე ყველა ჩანაწერი'+(_txCount>0?(' ('+_txCount.toLocaleString()+')'):'')+' ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>';
+      '<div class="hint">ციფრები სწორია, მაგრამ ყოველ გახსნაზე ყველა ჩანაწერი'+(_txCount>0?(' ('+_txCount.toLocaleString()+')'):'')+' ჩამოიტვირთება. ასაჩქარებლად გაუშვი SQL ბლოკი (fin_summary + fin_rebuild_summary + fin_* ფუნქციები) და გადატვირთე პროექტი.</div>')+diag;
 }
 function renderSettings(){
   renderPerfMode();
