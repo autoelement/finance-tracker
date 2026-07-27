@@ -931,12 +931,23 @@ function aggFromSummary(){
   if(SUM.length)hasData=true;   // never let an empty/stale summary hide real transactions
 }
 function loadSummary(done){
-  sb.from("fin_summary").select("mkey,category,ttype,total,cnt,dmin,dmax").eq("user_id",currentUser.id).then(function(res){
-    if(res.error){_sumOk=false;done(res.error);return;}
-    SUM=res.data||[];
-    try{localStorage.setItem(sumCacheKey(),JSON.stringify(SUM));}catch(e){}
-    done(null);
-  });
+  // paginate: a single request is capped server-side (1000 rows), which would
+  // silently truncate the summary and under-report every total
+  var PAGE=1000,page=0,all=[];
+  function next(){
+    sb.from("fin_summary").select("mkey,category,ttype,total,cnt,dmin,dmax").eq("user_id",currentUser.id)
+      .order("mkey",{ascending:true}).order("category",{ascending:true}).order("ttype",{ascending:true})
+      .range(page*PAGE,page*PAGE+PAGE-1).then(function(res){
+      if(res.error){_sumOk=false;done(res.error);return;}
+      var d=res.data||[];
+      for(var i=0;i<d.length;i++)all.push(d[i]);
+      if(d.length===PAGE){page++;setTimeout(next,0);return;}
+      SUM=all;
+      try{localStorage.setItem(sumCacheKey(),JSON.stringify(SUM));}catch(e){}
+      done(null);
+    });
+  }
+  next();
 }
 function rebuildSummary(done){ // recompute server-side after data changes
   if(!_sumOk){if(done)done(null);return;}
@@ -1223,7 +1234,7 @@ function loadMonthDetail(mk){
   cont.innerHTML='<span style="color:var(--text3)">იტვირთება...</span>';
   var q=sb.from("transactions").select("txdate,descr,category,ttype,amount").eq("user_id",currentUser.id).eq("import_id","manual");
   if(rg)q=q.gte("txdate",rg[0]).lte("txdate",rg[1]);
-  q.order("txdate",{ascending:true}).then(function(res){
+  q.order("txdate",{ascending:true}).limit(500).then(function(res){
     row.dataset.loaded="1";
     if(res.error){cont.innerHTML='<span style="color:var(--red)">შეცდომა: '+esc(res.error.message)+'</span>';return;}
     var d=res.data||[];
@@ -1536,7 +1547,7 @@ function exportCsv(){
     if(ft)query=query.eq("ttype",ft);if(fc)query=query.eq("category",fc);if(fb)query=query.eq("bank",fb);if(q)query=query.ilike("descr","%"+q+"%");
     if(periodFilter){var rg=monthRange(periodFilter);if(rg)query=query.gte("txdate",rg[0]).lte("txdate",rg[1]);}
     return query;}
-  var CAP=300000,PAGE=2000,CONC=6,finished=false,chunks=[],loaded=0;
+  var CAP=300000,PAGE=1000,CONC=6,finished=false,chunks=[],loaded=0; // PAGE must not exceed the server row cap
   function esc2(c){var s=""+c;return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
   function line(t){return [t.txdate||"",t.descr||"",t.category||"",catIncluded(t.category)?"ითვლება":"არ ითვლება",t.bank||"სხვა",t.ttype==="income"?"შემოსავალი":"ხარჯი",(t.ttype==="income"?"":"-")+(t.amount||0)].map(esc2).join(",");}
   showProgress("ექსპორტი...",0);
