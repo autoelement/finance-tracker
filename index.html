@@ -1712,12 +1712,12 @@ function emailInitials(email){
   return ((s[0]||"?").slice(0,2)).toUpperCase();
 }
 function initialsKey(){return "fin_initials_"+(currentUser?currentUser.id:"");}
-function currentInitials(){return localStorage.getItem(initialsKey())||emailInitials(currentUser&&currentUser.email);}
+function currentInitials(){var v=null;try{v=localStorage.getItem(initialsKey());}catch(e){}return v||emailInitials(currentUser&&currentUser.email);}
 function setAvatar(){var a=document.getElementById("avatar");if(a)a.textContent=currentInitials();}
 function editInitials(){
   var v=prompt("შენი ინიციალები (მაგ. MB):",currentInitials());
   if(v==null)return;v=v.trim().slice(0,4).toUpperCase();
-  if(v){localStorage.setItem(initialsKey(),v);setAvatar();}
+  if(v){try{localStorage.setItem(initialsKey(),v);}catch(e){}setAvatar();}
 }
 function afterLogin(user){
   currentUser=user;
