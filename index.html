@@ -831,8 +831,8 @@ function loadRemote(done){
         if((cr.error.message||"").indexOf("transaction")>-1||cr.error.code==="42P01"||cr.error.code==="PGRST205")
           toast("ცხრილი 'transactions' ვერ მოიძებნა — გაუშვი ახალი SQL Supabase-ში","err");
         else toast("ჩატვირთვის შეცდომა: "+cr.error.message,"err");
-        hasData=false;
-      }else hasData=(cr.count||0)>0;
+        hasData=false;_txCount=0;
+      }else{_txCount=cr.count||0;hasData=_txCount>0;}
       resetAggCache();_sumOk=true;_sumLoading=false; // per-user caches
       done();
     });
@@ -899,7 +899,7 @@ function renderDash(){renderPeriod();renderKpis();renderCharts();setDashLoading(
 /* ---- summary table: tiny pre-aggregated rows (month × category × type).
    Everything on the dashboard derives from it in memory, so no query ever
    scans the full transaction table again. ---- */
-var SUM=null, _sumOk=true, _sumLoading=false;
+var SUM=null, _sumOk=true, _sumLoading=false, _txCount=0, _sumRebuilt=false;
 function sumCacheKey(){return "fin_sum_"+(currentUser?currentUser.id:"");}
 function aggFromSummary(){
   var ex={};excludedCats().forEach(function(n){ex[n]=1;});
@@ -921,7 +921,7 @@ function aggFromSummary(){
   agg={inc:inc,exp:exp,ci:ci,ce:ce,cnt:cnt,dmin:dmin,dmax:dmax,
     months:Object.keys(months).map(function(k){return {mkey:k,income:months[k].income,expense:months[k].expense,cnt:months[k].cnt};}),
     catExp:arr(catE),catInc:arr(catI),daily:[]};
-  hasData=SUM.length>0;
+  if(SUM.length)hasData=true;   // never let an empty/stale summary hide real transactions
 }
 function loadSummary(done){
   sb.from("fin_summary").select("mkey,category,ttype,total,cnt,dmin,dmax").eq("user_id",currentUser.id).then(function(res){
@@ -941,14 +941,25 @@ function rebuildSummary(done){ // recompute server-side after data changes
 function loadDashboard(done){
   var my=++_dashReq;
   if(_sumOk){
-    if(SUM){aggFromSummary();renderDash();if(done)done(null);return;}   // instant, in-memory
-    try{var c=JSON.parse(localStorage.getItem(sumCacheKey())||"null");
-      if(c&&c.length!==undefined){SUM=c;aggFromSummary();renderDash();}else setDashLoading(true);}catch(e){setDashLoading(true);}
+    if(SUM&&SUM.length){aggFromSummary();renderDash();if(done)done(null);return;}   // instant, in-memory
+    try{var c=(_txCount>0)?JSON.parse(localStorage.getItem(sumCacheKey())||"null"):null; // ignore stale cache when the account has no rows
+      if(c&&c.length){SUM=c;aggFromSummary();renderDash();}else setDashLoading(true);}catch(e){setDashLoading(true);}
     if(_sumLoading){if(done)done(null);return;}
     _sumLoading=true;
     loadSummary(function(err){
       _sumLoading=false;
       if(err){legacyDashboard(my,done);return;}   // summary table not set up → old path
+      if((!SUM||!SUM.length)&&_txCount>0&&!_sumRebuilt){   // summary empty but data exists → build it once
+        _sumRebuilt=true;
+        showProgress("ჯამების აგება...",null);
+        rebuildSummary(function(err2){
+          hideProgress();
+          if(err2||!SUM||!SUM.length){legacyDashboard(my,done);return;}
+          if(my===_dashReq){aggFromSummary();renderDash();}
+          if(done)done(null);
+        });
+        return;
+      }
       if(my===_dashReq){aggFromSummary();renderDash();}
       if(done)done(null);
     });
