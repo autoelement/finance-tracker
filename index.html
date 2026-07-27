@@ -991,12 +991,49 @@ function loadSummary(done){
   }
   next();
 }
-function rebuildSummary(done){ // recompute server-side after data changes
+function rebuildSummary(done){ // recompute after data changes
   if(!_sumOk){if(done)done(null);return;}
+  var settled=false;
+  function finish(err){if(settled)return;settled=true;if(done)done(err);}
+  // watchdog: a server-side rebuild can exceed the database statement timeout on
+  // large tables — never let the UI sit waiting, build it from the client instead
+  var wd=setTimeout(function(){if(!settled)rebuildSummaryClient(finish);},12000);
   sb.rpc("fin_rebuild_summary").then(function(res){
-    if(res.error){_sumOk=false;if(done)done(res.error);return;}
-    loadSummary(function(err){if(done)done(err);});
+    if(settled)return;
+    if(res.error){clearTimeout(wd);rebuildSummaryClient(finish);return;}
+    clearTimeout(wd);
+    loadSummary(function(err){finish(err);});
   });
+}
+/* build the summary in the browser from the rows we can already page through,
+   then store it — avoids one long server-side statement entirely */
+function rebuildSummaryClient(done){
+  progMsg("ჯამები ითვლება (ჩანაწერებიდან)...");
+  function build(rows){
+    var m={};
+    rows.forEach(function(r){
+      var mk=r.txdate?(""+r.txdate).slice(0,7):"უცნობი",cat=r.category||"სხვა",tt=r.ttype||"expense";
+      var k=mk+"|"+cat+"|"+tt;
+      if(!m[k])m[k]={user_id:currentUser.id,mkey:mk,category:cat,ttype:tt,total:0,cnt:0,dmin:r.txdate||null,dmax:r.txdate||null};
+      var e=m[k];e.total+=Math.abs(+r.amount||0);e.cnt++;
+      if(r.txdate){if(!e.dmin||r.txdate<e.dmin)e.dmin=r.txdate;if(!e.dmax||r.txdate>e.dmax)e.dmax=r.txdate;}
+    });
+    var out=Object.keys(m).map(function(k){return m[k];});
+    sb.from("fin_summary").delete().eq("user_id",currentUser.id).then(function(){
+      var i=0,CH=500;
+      (function push(){
+        if(i>=out.length){SUM=out.map(function(r){return {mkey:r.mkey,category:r.category,ttype:r.ttype,total:r.total,cnt:r.cnt,dmin:r.dmin,dmax:r.dmax};});
+          try{localStorage.setItem(sumCacheKey(),JSON.stringify(SUM));}catch(e){}
+          if(done)done(null);return;}
+        sb.from("fin_summary").upsert(out.slice(i,i+CH),{onConflict:"user_id,mkey,category,ttype"}).then(function(r){
+          if(r.error){if(done)done(r.error);return;}
+          i+=CH;progMsg("ჯამები ინახება... "+Math.min(i,out.length)+"/"+out.length);setTimeout(push,0);
+        });
+      })();
+    });
+  }
+  if(_allRows&&_allRows.length){build(_allRows);return;}
+  fetchAllRows(function(err,rows){if(err){if(done)done(err);return;}_allRows=rows;build(rows);});
 }
 /* the summary must always account for exactly as many rows as the transactions
    table holds; if it doesn't, it is stale/incomplete and gets rebuilt */
@@ -1098,26 +1135,10 @@ function computeAgg(rows){
     catExp:arr(catE),catInc:arr(catI),
     daily:Object.keys(daily).sort().map(function(d){return {d:d,delta:daily[d]};})};
 }
-function loadDashboardClient(my,sig,silent,done){
-  // recompute from cached rows (this session) — no refetch on period/filter changes
-  if(_allRows){if(my===_dashReq){computeAgg(_allRows);agg._fresh=1;_aggSig=sig;hasData=(agg.cnt||0)>0;saveAggCache();renderDash();}if(done)done(null);return;}
-  // keyset pagination: walk forward by id instead of OFFSET. Deep offsets make the
-  // database re-scan everything before each page and hit the statement timeout.
+/* keyset pagination: walk forward by id instead of OFFSET. Deep offsets make the
+   database re-scan everything before each page and hit the statement timeout. */
+function fetchAllRows(done,onProg){
   var PAGE=1000,rows=[],lastId=null,stop=false;
-  if(!silent)showProgress("ითვლება...",null);
-  function fin(err){
-    if(!silent)hideProgress();
-    if(err){
-      setDashLoading(false);
-      toast(/timeout/i.test(err.message||"")
-        ? "ბაზამ ვერ მოასწრო დამუშავება — ჩართე სწრაფი რეჟიმი (პარამეტრები → SQL)"
-        : ("ჩატვირთვის შეცდომა: "+err.message),"err");
-      if(done)done(err);return;
-    }
-    _allRows=rows;hasData=rows.length>0;
-    if(my===_dashReq){computeAgg(rows);agg._fresh=1;_aggSig=sig;saveAggCache();renderDash();}
-    if(done)done(null);
-  }
   function next(){
     var q=sb.from("transactions").select("id,txdate,category,ttype,amount").eq("user_id",currentUser.id)
       .order("id",{ascending:true}).limit(PAGE);
@@ -1126,17 +1147,33 @@ function loadDashboardClient(my,sig,silent,done){
       if(stop)return;
       if(r.error){
         if(/timeout/i.test(r.error.message||"")&&PAGE>200){PAGE=Math.floor(PAGE/2);setTimeout(next,150);return;} // back off
-        stop=true;fin(r.error);return;
+        stop=true;done(r.error);return;
       }
       var d=r.data||[];
       for(var i=0;i<d.length;i++)rows.push(d[i]);
       if(d.length)lastId=d[d.length-1].id;
-      if(!silent)progMsg("ითვლება... "+rows.length.toLocaleString());
-      if(d.length<PAGE){stop=true;fin(null);return;}
+      if(onProg)onProg(rows.length);
+      if(d.length<PAGE){stop=true;done(null,rows);return;}
       setTimeout(next,0);
     });
   }
   next();
+}
+function loadDashboardClient(my,sig,silent,done){
+  // recompute from cached rows (this session) — no refetch on period/filter changes
+  if(_allRows){if(my===_dashReq){computeAgg(_allRows);agg._fresh=1;_aggSig=sig;hasData=(agg.cnt||0)>0;saveAggCache();renderDash();}if(done)done(null);return;}
+  if(!silent)showProgress("ითვლება...",null);
+  fetchAllRows(function(err,rows){
+    if(!silent)hideProgress();
+    if(err){
+      setDashLoading(false);
+      toast(/timeout/i.test(err.message||"")?"ბაზამ ვერ მოასწრო დამუშავება — სცადე თავიდან":("ჩატვირთვის შეცდომა: "+err.message),"err");
+      if(done)done(err);return;
+    }
+    _allRows=rows;hasData=rows.length>0;
+    if(my===_dashReq){computeAgg(rows);agg._fresh=1;_aggSig=sig;saveAggCache();renderDash();}
+    if(done)done(null);
+  },function(n){if(!silent)progMsg("ითვლება... "+n.toLocaleString());});
 }
 function render(){loadDashboard(function(){renderTable();});}
 function renderPeriod(){
@@ -1411,7 +1448,7 @@ function verifySummary(){
 }
 function forceRebuild(){
   showProgress("ჯამები ითვლება...",null);
-  invalidateAgg();SUM=null;try{localStorage.removeItem(sumCacheKey());}catch(e){}
+  invalidateAgg();SUM=null;_allRows=null;try{localStorage.removeItem(sumCacheKey());}catch(e){}
   rebuildSummary(function(err){
     hideProgress();
     if(err){toast("გადათვლა ვერ მოხერხდა: "+err.message,"err");return;}
