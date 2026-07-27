@@ -22,6 +22,7 @@
   --purple:#a060ff;--purple-dim:#a060ff15;
   --pink:#ff60c0;--cyan:#40e0e0;
 }
+html,body{max-width:100%;overflow-x:hidden}
 body{background:var(--bg);color:var(--text);font-family:'Noto Sans Georgian',sans-serif;min-height:100vh}
 .mono{font-family:'Space Mono',monospace}
 button{font-family:inherit}
@@ -56,11 +57,11 @@ header{position:sticky;top:0;z-index:100;background:rgba(8,12,15,.96);backdrop-f
 
 .section-title{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:26px 0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
-.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:8px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px 18px;min-width:0;overflow:hidden}
 .stat-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-.stat-val{font-size:25px;font-weight:700;font-family:'Space Mono',monospace;line-height:1.1}
-.stat-sub{font-size:12px;color:var(--text2);margin-top:6px}
+.stat-val{font-size:clamp(16px,4.4vw,25px);font-weight:700;font-family:'Space Mono',monospace;line-height:1.15;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.stat-sub{font-size:12px;color:var(--text2);margin-top:6px;overflow-wrap:anywhere}
 .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}
 
 /* SKELETON LOADING */
@@ -201,11 +202,19 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-import,bo
 .prog-pct{font-size:12px;color:var(--text3);margin-top:9px;font-family:'Space Mono',monospace}
 
 @media(max-width:820px){
-  .stats{grid-template-columns:1fr 1fr}
-  .charts{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .charts{grid-template-columns:minmax(0,1fr)}
+  .chart-card{min-width:0}
   .chart-card.full{grid-column:auto}
-  .cat-list{grid-template-columns:1fr}
+  .cat-list{grid-template-columns:minmax(0,1fr)}
   .wrap{padding:16px 14px 70px}
+  .stat-card{padding:14px}
+  #k-period{font-size:13px!important}
+}
+@media(max-width:430px){
+  .stat-val{font-size:clamp(15px,5.4vw,20px)}
+  .stat-label{font-size:10px}
+  .stat-sub{font-size:11px}
 }
 </style>
 </head>
@@ -945,18 +954,25 @@ function renderPeriod(){
   sel.value=cur;
 }
 function onPeriodChange(){periodFilter=document.getElementById("period").value;tablePage=0;render();}
+// on narrow screens show compact amounts (₾326.2K) but keep the exact value in the tooltip
+function kpiVal(el,n){el.textContent=(window.innerWidth<=560&&Math.abs(n)>=100000)?fmtShort(n):fmt(n);el.title=fmt(n);}
 function renderKpis(){
   var t=agg||{inc:0,exp:0,ci:0,ce:0,cnt:0,dmin:null,dmax:null};var net=t.inc-t.exp;
-  document.getElementById("k-income").textContent=fmt(t.inc);
-  document.getElementById("k-expense").textContent=fmt(t.exp);
+  kpiVal(document.getElementById("k-income"),t.inc);
+  kpiVal(document.getElementById("k-expense"),t.exp);
   document.getElementById("k-income-sub").textContent=(t.ci||0).toLocaleString()+" ჩანაწერი";
   document.getElementById("k-expense-sub").textContent=(t.ce||0).toLocaleString()+" ჩანაწერი";
-  var ne=document.getElementById("k-net");ne.textContent=fmt(net);ne.className="stat-val "+(net>=0?"green":"red");
+  var ne=document.getElementById("k-net");kpiVal(ne,net);ne.className="stat-val "+(net>=0?"green":"red");
   var margin=t.inc>0?((net/t.inc)*100):0;
   document.getElementById("k-margin").textContent=(net>=0?"მოგება · ":"ზარალი · ")+(t.inc>0?margin.toFixed(1)+"% მარჟა":"—");
   document.getElementById("k-period").textContent=(t.dmin&&t.dmax)?(t.dmin+" — "+t.dmax):"—";
   document.getElementById("k-count").textContent=(t.cnt||0).toLocaleString()+" ტრანზაქცია";
 }
+// re-render KPI numbers when crossing the compact/full width threshold
+(function(){var wasNarrow=window.innerWidth<=560,tm=null;
+  window.addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(function(){
+    var n=window.innerWidth<=560;if(n!==wasNarrow){wasNarrow=n;if(agg)renderKpis();}},150);});
+})();
 function renderFilters(){
   var sc=document.getElementById("filter-cat"),cur=sc.value;sc.innerHTML='<option value="">ყველა კატეგორია</option>';
   catNames().forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;sc.appendChild(o);});sc.value=cur;
