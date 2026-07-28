@@ -906,7 +906,7 @@ function loadAggDisk(){
   if(_aggDiskLoaded)return;_aggDiskLoaded=true;
   try{var c=JSON.parse(localStorage.getItem(aggCacheKey())||"null");if(c&&c.m){_aggMem=c.m;_aggOrder=c.o||Object.keys(c.m);}}catch(e){}
 }
-function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;SUM=null;}
+function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;SUM=null;_periodPicked=false;periodFilter="";}
 function invalidateAgg(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
 /* data changed → refresh the summary. When the exact records that changed are
    known, fold them in directly; otherwise rebuild from scratch. */
@@ -921,7 +921,23 @@ function afterDataChange(cb,records,sign){
   rebuildSummary(function(){if(cb)cb();});
 }
 function invalidateAggKeepSummary(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
-function renderDash(){renderPeriod();renderKpis();renderCharts();renderCatSummary();setDashLoading(false);}
+var _periodPicked=false;
+/* the first dashboard of a session opens on the most recent month that has
+   data, rather than on every period at once */
+function pickDefaultPeriod(){
+  if(_periodPicked)return false;
+  var ms=(agg?agg.months:[]).map(function(m){return m.mkey;}).filter(Boolean).sort();
+  if(!ms.length)return false;          // months not known yet — try again next render
+  _periodPicked=true;
+  var last=ms[ms.length-1];
+  if(periodFilter)return false;        // the user already chose one; leave it alone
+  periodFilter=last;
+  return true;
+}
+function renderDash(){
+  if(pickDefaultPeriod()){render();return;}   // re-derive for the month just selected
+  renderPeriod();renderKpis();renderCharts();renderCatSummary();setDashLoading(false);
+}
 /* per-category totals for the current period — directly comparable with the transactions table */
 function renderCatSummary(){
   var tb=document.getElementById("catsum-body");if(!tb)return;
