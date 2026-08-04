@@ -1233,9 +1233,79 @@ function verifyVisibleCategories(){
   _catVerified[key]=1;
   categoriesDrifted(function(drifted){
     if(!drifted)return;
-    _catVerified={};_sumRebuilt=false;
-    forceRebuild();
+    _catVerified={};
+    if(periodFilter){                        // one wrong month costs one month
+      rebuildSummaryMonth(periodFilter,function(err){
+        if(err){_sumRebuilt=false;forceRebuild();return;}
+        _catVerified[periodFilter]=1;
+        aggFromSummary();renderDash();renderSettings();
+      });
+      return;
+    }
+    _sumRebuilt=false;forceRebuild();
   },periodFilter||null);
+}
+function nextDay(ds){
+  var t=Date.UTC(+ds.slice(0,4),+ds.slice(5,7)-1,+ds.slice(8,10))+86400000,d=new Date(t);
+  var p=function(x){return(x<10?"0":"")+x;};
+  return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate());
+}
+/* a date range, walked one day per stream, several days at a time */
+function fetchRangeRows(from,to,onProg,done){
+  var days=[],d=from;
+  while(d<=to){days.push(d);d=nextDay(d);}
+  var rows=[],fired=false;
+  function push(b){for(var i=0;i<b.length;i++)rows.push(b[i]);if(onProg)onProg(rows.length);}
+  function finish(err){if(fired)return;fired=true;done(err,err?null:rows);}
+  var queue=days.slice(),live=Math.min(6,queue.length);
+  if(!live){finish(null);return;}
+  function lane(){
+    if(fired)return;
+    if(!queue.length){live--;if(live===0)finish(null);return;}
+    var day=queue.shift();
+    walkKeyset(function(q){return q.eq("txdate",day);},push,function(err){
+      if(err){finish(err);return;}
+      lane();
+    });
+  }
+  for(var i=0;i<live;i++)lane();
+}
+/* recount a single month. One month is a slice of the table, so a month that
+   drifted never costs a scan of everything. */
+function rebuildSummaryMonth(mkey,done){
+  var rg=monthRange(mkey);
+  if(!rg){if(done)done(null);return;}
+  showProgress("ჯამები ითვლება — "+monthLabel(mkey),null);
+  fetchRangeRows(rg[0],rg[1],
+    function(n){progMsg(monthLabel(mkey)+": "+n.toLocaleString()+" ჩანაწერი");},
+    function(err,rows){
+      if(err){hideProgress();if(done)done(err);return;}
+      var m={};
+      rows.forEach(function(r){
+        var cat=r.category||"სხვა",tt=r.ttype||"expense",k=cat+"|"+tt;
+        if(!m[k])m[k]={user_id:currentUser.id,mkey:mkey,category:cat,ttype:tt,total:0,cnt:0,dmin:r.txdate||null,dmax:r.txdate||null};
+        var e=m[k];e.total+=Math.abs(+r.amount||0);e.cnt++;
+        if(r.txdate){if(!e.dmin||r.txdate<e.dmin)e.dmin=r.txdate;if(!e.dmax||r.txdate>e.dmax)e.dmax=r.txdate;}
+      });
+      var out=Object.keys(m).map(function(k){return m[k];});
+      progMsg("ჯამები ინახება...");
+      sb.from("fin_summary").delete().eq("user_id",currentUser.id).eq("mkey",mkey).then(function(dr){
+        if(dr&&dr.error){hideProgress();if(done)done(dr.error);return;}
+        var i=0,CH=500;
+        (function push(){
+          if(i>=out.length){
+            SUM=(SUM||[]).filter(function(r){return r.mkey!==mkey;});
+            out.forEach(function(r){SUM.push({mkey:r.mkey,category:r.category,ttype:r.ttype,total:r.total,cnt:r.cnt,dmin:r.dmin,dmax:r.dmax});});
+            try{localStorage.setItem(sumCacheKey(),JSON.stringify(SUM));}catch(e){}
+            hideProgress();if(done)done(null);return;
+          }
+          sb.from("fin_summary").upsert(out.slice(i,i+CH),{onConflict:"user_id,mkey,category,ttype"}).then(function(r){
+            if(r.error){hideProgress();if(done)done(r.error);return;}
+            i+=CH;setTimeout(push,0);
+          });
+        })();
+      });
+    });
 }
 function loadDashboard(done){
   var my=++_dashReq;
