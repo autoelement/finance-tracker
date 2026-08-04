@@ -906,11 +906,12 @@ function loadAggDisk(){
   if(_aggDiskLoaded)return;_aggDiskLoaded=true;
   try{var c=JSON.parse(localStorage.getItem(aggCacheKey())||"null");if(c&&c.m){_aggMem=c.m;_aggOrder=c.o||Object.keys(c.m);}}catch(e){}
 }
-function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;SUM=null;_periodPicked=false;periodFilter="";}
+function resetAggCache(){_aggMem={};_aggOrder=[];_aggDiskLoaded=false;agg=null;_aggSig=null;_allRows=null;SUM=null;_periodPicked=false;periodFilter="";_catVerified={};}
 function invalidateAgg(){_aggMem={};_aggOrder=[];_aggDiskLoaded=true;agg=null;_aggSig=null;_allRows=null;try{localStorage.removeItem(aggCacheKey());}catch(e){}}
 /* data changed → refresh the summary. When the exact records that changed are
    known, fold them in directly; otherwise rebuild from scratch. */
 function afterDataChange(cb,records,sign){
+  _catVerified={};   // counts moved; every month is worth re-checking
   var hadSum=SUM&&SUM.length;
   invalidateAggKeepSummary();
   if(hadSum&&records&&records.length){
@@ -937,6 +938,7 @@ function pickDefaultPeriod(){
 function renderDash(){
   if(pickDefaultPeriod()){render();return;}   // re-derive for the month just selected
   renderPeriod();renderKpis();renderCharts();renderCatSummary();setDashLoading(false);
+  setTimeout(verifyVisibleCategories,0);      // never delays the paint
 }
 /* per-category totals for the current period — directly comparable with the transactions table */
 function renderCatSummary(){
@@ -1162,53 +1164,78 @@ function ensureSummaryFresh(my,done){
     heal("ჯამები ითვლება...");
   });
 }
-/* ask the transactions table directly whether a category the summary has never
-   heard of actually has rows. LIMIT 1, no counting, no custom SQL — this is the
-   one check that cannot be fooled by a stale or wrongly-built summary. */
-function anyRowsInCats(names,cb){
-  var i=0;
-  function next(){
-    if(i>=names.length){cb(null);return;}
+/* ground truth. PostgREST does the counting straight off the transactions, so
+   no custom SQL — however it happens to be written — can make a wrongly built
+   summary agree with itself. */
+function countByCategory(names,month,cb){
+  var out={},i=0,done=false;
+  if(!names.length){cb(null,out);return;}
+  var live=Math.min(6,names.length);
+  function fail(err){if(done)return;done=true;cb(err,null);}
+  function lane(){
+    if(done)return;
+    if(i>=names.length){live--;if(live===0){done=true;cb(null,out);}return;}
     var n=names[i++];
-    sb.from("transactions").select("id").eq("user_id",currentUser.id).eq("category",n).limit(1).then(function(r){
-      if(!r.error&&r.data&&r.data.length){cb(n);return;}
-      next();
+    var q=sb.from("transactions").select("id",{count:"exact",head:true}).eq("user_id",currentUser.id).eq("category",n);
+    if(month){var rg=monthRange(month);if(rg)q=q.gte("txdate",rg[0]).lte("txdate",rg[1]);}
+    q.then(function(r){
+      if(done)return;
+      if(r.error){fail(r.error);return;}
+      out[n]=+r.count||0;lane();
     });
   }
-  next();
+  for(var k=0;k<live;k++)lane();
 }
-/* compare the summary's per-category totals against the rows themselves */
-function categoriesDrifted(cb){
-  var mine={},haveCat={};
+function summaryCounts(month){
+  var mine={};
   (SUM||[]).forEach(function(r){
-    var k=(r.ttype==="income"?"i|":"e|")+(r.category||"სხვა");
-    if(!mine[k])mine[k]={total:0,cnt:0};
-    mine[k].total+=+r.total||0;mine[k].cnt+=+r.cnt||0;
-    if((+r.cnt||0)>0)haveCat[r.category||"სხვა"]=1;
+    if(month&&r.mkey!==month)return;
+    var c=r.category||"სხვა";
+    mine[c]=(mine[c]||0)+(+r.cnt||0);
   });
-  var absent=catNames().filter(function(n){return !haveCat[n];});
-  anyRowsInCats(absent,function(found){
-    if(found){_sumDiag='კატეგორია "'+found+'" ჩანაწერებში იყო, ჯამებში — არა';cb(true);return;}
-    compareCatTotals(mine,cb);
+  return mine;
+}
+function knownCategories(month){
+  var names={};
+  (SUM||[]).forEach(function(r){if(!month||r.mkey===month)names[r.category||"სხვა"]=1;});
+  catNames().forEach(function(n){names[n]=1;});
+  return Object.keys(names);
+}
+/* does the summary still describe the rows? compares record counts, which is
+   what every change to the data moves: an import, a delete, a recategorisation. */
+function categoriesDrifted(cb,month){
+  var mine=summaryCounts(month);
+  countByCategory(knownCategories(month),month||null,function(err,real){
+    if(err){cb(false);return;}                 // cannot tell → leave the summary alone
+    var off=[];
+    Object.keys(real).forEach(function(n){
+      var have=mine[n]||0;
+      if(have!==real[n])off.push({name:n,real:real[n],have:have,gap:Math.abs(real[n]-have)});
+    });
+    if(!off.length){cb(false);return;}
+    // name the worst one, preferring a category that actually has rows — that is
+    // the one the user is looking at when the number seems wrong
+    off.sort(function(a,b){return (b.gap-a.gap)||(b.real-a.real);});
+    var w=off[0];
+    _sumDiag=(off.length>1?(off.length+" კატეგორიის ჯამი არ ემთხვევა ჩანაწერებს, მაგ. "):"კატეგორია ")+
+      '"'+w.name+'"'+(month?(" ("+monthLabel(month)+")"):"")+
+      ": ჩანაწერებში "+w.real.toLocaleString()+", ჯამებში "+w.have.toLocaleString();
+    cb(true);
   });
 }
-function compareCatTotals(mine,cb){
-  Promise.all([
-    sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"expense"}),
-    sb.rpc("fin_by_category",{p_excluded:[],p_month:null,p_type:"income"})
-  ]).then(function(res){
-    if(res[0].error||res[1].error){cb(false);return;}   // can't tell → leave the summary alone
-    var seen={},drift=false;
-    [["e",res[0].data||[]],["i",res[1].data||[]]].forEach(function(p){
-      p[1].forEach(function(r){
-        var k=p[0]+"|"+(r.category||"სხვა");seen[k]=1;
-        var m=mine[k];
-        if(!m||Math.abs((+r.total||0)-m.total)>0.01||(r.cnt!=null&&(+r.cnt)!==m.cnt))drift=true;
-      });
-    });
-    Object.keys(mine).forEach(function(k){if(!seen[k]&&mine[k].cnt>0)drift=true;});
-    cb(drift);
-  });
+/* the month on screen is checked in the background, once each, after it is
+   drawn — a wrong number is corrected rather than left sitting there */
+var _catVerified={};
+function verifyVisibleCategories(){
+  if(!currentUser||!_sumOk||!SUM||!SUM.length)return;
+  var key=periodFilter||"all";
+  if(_catVerified[key])return;
+  _catVerified[key]=1;
+  categoriesDrifted(function(drifted){
+    if(!drifted)return;
+    _catVerified={};_sumRebuilt=false;
+    forceRebuild();
+  },periodFilter||null);
 }
 function loadDashboard(done){
   var my=++_dashReq;
