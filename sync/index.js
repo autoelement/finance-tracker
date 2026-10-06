@@ -10,7 +10,7 @@
 
    Exits non-zero on failure so a cron or a systemd timer reports it. */
 
-const { load } = require("./config");
+const { load, withStored } = require("./config");
 const { createStore } = require("./store");
 const { run } = require("./run");
 const { dryStore, summarise } = require("./dryrun");
@@ -42,7 +42,8 @@ async function check(cfg, store) {
     const b = cfg.banks[id];
     if (!b.enabled) { console.log(b.label.padEnd(10) + "not configured, would be skipped"); continue; }
     const st = await store.readSyncState(id);
-    console.log(b.label.padEnd(10) + (b.accounts.length || "all") + " account(s), " +
+    console.log(b.label.padEnd(10) + "from " + (b.source === "app" ? "the app" : "the environment") + ", " +
+      (b.accounts.length || "all") + " account(s), " +
       (st ? "last run " + (st.last_run_at || "?") + " (" + (st.last_status || "?") + "), bookmark " + (st.last_day || "none")
           : "never run"));
     if (st && st.last_error) console.log("          last error: " + st.last_error);
@@ -59,9 +60,23 @@ async function check(cfg, store) {
   console.log("\nlooks reachable. Nothing was written.");
 }
 
-async function main() {
+/* Keys entered in the app, falling back to the environment. A database that
+   cannot answer must not silently turn into "no banks configured". */
+async function resolveConfig(store) {
   const cfg = load();
-  const real = createStore(cfg);
+  try {
+    return withStored(cfg, await store.readBankCredentials());
+  } catch (e) {
+    console.error("could not read the stored credentials (" +
+      String((e && e.message) || e).slice(0, 120) + ") — using the environment only");
+    return cfg;
+  }
+}
+
+async function main() {
+  const base = load();
+  const real = createStore(base);
+  const cfg = await resolveConfig(real);
 
   if (MODE === "check") return check(cfg, real);
 

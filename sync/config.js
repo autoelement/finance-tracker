@@ -62,6 +62,25 @@ function bank(label, cfg) {
   return Object.assign({ label: label, enabled: !!cfg.baseUrl }, cfg);
 }
 
+/* Credentials entered in the app win over the environment. The environment
+   stays supported for a deployment that would rather keep the keys off the
+   database entirely — it is the stronger of the two, just less convenient. */
+function withStored(cfg, stored) {
+  for (const id of Object.keys(cfg.banks)) {
+    const s = stored && stored[id];
+    if (!s || !s.baseUrl || !s.apiKey) continue;
+    const b = cfg.banks[id];
+    cfg.banks[id] = Object.assign({}, b, {
+      baseUrl: s.baseUrl,
+      apiKey: s.apiKey,
+      accounts: s.accounts ? list(s.accounts) : b.accounts,
+      enabled: true,
+      source: "app",
+    });
+  }
+  return cfg;
+}
+
 function list(s) {
   return String(s).split(",").map(x => x.trim()).filter(Boolean).map(entry => {
     const [account, currency] = entry.split(":");
@@ -69,4 +88,4 @@ function list(s) {
   });
 }
 
-module.exports = { load, required, optional, intOpt };
+module.exports = { load, withStored, required, optional, intOpt };

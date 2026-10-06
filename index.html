@@ -359,6 +359,10 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-logout,bo
     <div class="section-title" style="margin-top:26px">დათვლის რეჟიმი</div>
     <div id="perf-mode" class="cat-card" style="margin-bottom:16px"></div>
 
+    <div class="section-title" style="margin-top:26px">ბანკების კავშირი</div>
+    <div class="hint" style="margin:-6px 0 12px">გასაღები დაშიფრულად ინახება და <b>უკან აღარ იკითხება</b> — ვერც შენ დაინახავ და ვერც სხვა. შეცვლა შეიძლება, ნახვა — არა. ჩაწერე მხოლოდ <b>წაკითხვის</b> უფლების გასაღები; გადახდის უფლების მქონე არასდროს.</div>
+    <div id="bank-creds"></div>
+
     <div class="section-title" style="margin-top:26px">ისტორიული მონაცემების შემოტანა</div>
     <div class="hint" style="margin:-6px 0 12px">ყოველდღიური ტრანზაქციები ბანკების API-დან მოდის; ატვირთვა აქ მხოლოდ იმ პერიოდისთვისაა, რომელსაც API ვეღარ წვდება. ერთი და იგივე ტრანზაქცია ორჯერ არ ჩაიწერება — ბანკის ოპერაციის იდენტიფიკატორით მოწმდება.</div>
     <button class="btn" onclick="triggerImport()">⤒ ფაილის ატვირთვა (.xlsx · .xls · .csv)</button>
@@ -1681,8 +1685,75 @@ function forceRebuild(){
     });
   });
 }
+/* ============ BANK CREDENTIALS ============ */
+/* The key is write-only by design: the table grants this page no sight of it,
+   so the form shows whether one is stored and when, never the value. */
+var BANK_CREDS=null;
+function loadBankCreds(cb){
+  sb.from("bank_credentials").select("bank,base_url,accounts,updated_at,has_secret")
+    .eq("user_id",currentUser.id).then(function(res){
+      BANK_CREDS=res.error?[]:(res.data||[]);
+      if(cb)cb(res.error||null);
+    });
+}
+function credFor(bank){
+  for(var i=0;i<(BANK_CREDS||[]).length;i++)if(BANK_CREDS[i].bank===bank)return BANK_CREDS[i];
+  return null;
+}
+function renderBankCreds(){
+  var el=document.getElementById("bank-creds");if(!el)return;
+  if(BANK_CREDS===null){el.innerHTML='<div class="hint">იტვირთება...</div>';return;}
+  var banks=[["bog","🟠 საქართველოს ბანკი (BOG)","IBAN:GEL, IBAN:USD — სავალდებულო"],
+             ["tbc","🔵 თიბისი ბანკი (TBC)","IBAN:GEL — ცარიელი ნიშნავს ყველა ანგარიშს"]];
+  var h="";
+  banks.forEach(function(b){
+    var id=b[0],c=credFor(id);
+    var when=c&&c.updated_at?dateStr(new Date(c.updated_at)):"";
+    var state=c&&c.has_secret
+      ? '<span class="pill in">გასაღები დაყენებულია'+(when?" · "+when:"")+'</span>'
+      : '<span class="pill out">გასაღები არ არის</span>';
+    h+='<div class="cat-card" style="margin-bottom:12px">'+
+       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+       '<b>'+b[1]+'</b>'+state+'</div>'+
+       '<label class="hint">მისამართი (BASE_URL)</label>'+
+       '<input id="cred-url-'+id+'" type="text" placeholder="https://..." value="'+esc((c&&c.base_url)||"")+'" style="width:100%;margin:4px 0 10px">'+
+       '<label class="hint">ანგარიშები — '+esc(b[2])+'</label>'+
+       '<input id="cred-acc-'+id+'" type="text" placeholder="GE00XX0000000000000000:GEL" value="'+esc((c&&c.accounts)||"")+'" style="width:100%;margin:4px 0 10px">'+
+       '<label class="hint">API გასაღები'+(c&&c.has_secret?" — ცარიელი დატოვე, თუ შეცვლა არ გინდა":"")+'</label>'+
+       '<input id="cred-key-'+id+'" type="password" autocomplete="new-password" placeholder="'+(c&&c.has_secret?"•••••••• შენახულია":"ჩასვი გასაღები")+'" style="width:100%;margin:4px 0 12px">'+
+       '<button class="btn" onclick="saveBankCred(\''+id+'\')">შენახვა</button>'+
+       (c?'<button class="btn btn-danger" style="margin-left:8px" onclick="clearBankCred(\''+id+'\')">წაშლა</button>':'')+
+       '</div>';
+  });
+  el.innerHTML=h;
+}
+function saveBankCred(bank){
+  var url=(document.getElementById("cred-url-"+bank).value||"").trim();
+  var acc=(document.getElementById("cred-acc-"+bank).value||"").trim();
+  var keyEl=document.getElementById("cred-key-"+bank);
+  var key=keyEl.value||"";
+  if(!url){toast("მისამართი (BASE_URL) სავალდებულოა","err");return;}
+  if(bank==="bog"&&!acc){toast("BOG-ს ანგარიში სჭირდება: IBAN:ვალუტა","err");return;}
+  var existing=credFor(bank);
+  if(!key&&!(existing&&existing.has_secret)){toast("გასაღები სავალდებულოა","err");return;}
+  sb.rpc("fin_set_bank_credential",{p_bank:bank,p_base_url:url,p_accounts:acc,p_api_key:key}).then(function(res){
+    keyEl.value="";   // never leave it sitting in the form
+    if(res.error){toast("შენახვა ვერ მოხერხდა: "+res.error.message,"err");return;}
+    loadBankCreds(function(){renderBankCreds();toast("შენახულია","ok");});
+  });
+}
+function clearBankCred(bank){
+  if(!confirm("წავშალო ამ ბანკის კავშირი და გასაღები?"))return;
+  sb.rpc("fin_clear_bank_credential",{p_bank:bank}).then(function(res){
+    if(res.error){toast("წაშლა ვერ მოხერხდა: "+res.error.message,"err");return;}
+    loadBankCreds(function(){renderBankCreds();toast("წაიშალა","ok");});
+  });
+}
+
 function renderSettings(){
   renderPerfMode();
+  if(BANK_CREDS===null)loadBankCreds(function(){renderBankCreds();});
+  renderBankCreds();
   var banks=[["bog","🟠 საქართველოს ბანკი (BOG)"],["tbc","🔵 თიბისი ბანკი (TBC)"],["other","📄 სხვა / ავტომატური"]];
   var fmts=[["auto","ავტომატური"],["DMY","დღე-თვე-წელი (DD-MM-YY)"],["MDY","თვე-დღე-წელი (MM-DD-YY)"],["YMD","წელი-თვე-დღე (YYYY-MM-DD)"]];
   var h="";

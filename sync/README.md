@@ -36,8 +36,26 @@ half-filled authentication shows up before a real run.
 have stored, broken down by category, so the figures can be checked against a
 statement before anything lands in the database.
 
-Everything comes from the environment. Nothing is read from a file in this
-repository, and no credential is ever printed.
+### Where the credentials come from
+
+Two sources, and the app wins over the environment:
+
+**From the app** — Settings → ბანკების კავშირი. The key goes into Supabase
+Vault, encrypted. The page can set and replace it but has no route to read it
+back: the table grants the browser named columns only, the pointer is not
+among them, and the function that decrypts is granted to the service role
+alone. Convenient — a key is rotated from a browser — but the key does pass
+through the browser once, when it is typed, and it does sit in the database.
+
+**From the environment** — the stronger of the two: the key never touches a
+browser and is never in the database. Less convenient: rotating it means
+reaching the machine.
+
+Half a pair is ignored: a stored URL with no key leaves a working environment
+configuration alone rather than breaking it.
+
+Nothing is read from a file in this repository, and no credential is ever
+printed.
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -58,7 +76,8 @@ live while the other is still being arranged.
 
 ## Before the first run
 
-Run `sql/setup.sql` and then `sql/sync_state.sql` in the Supabase SQL editor.
+In the Supabase SQL editor, run `sql/setup.sql`, then `sql/sync_state.sql`, then
+`sql/bank_credentials.sql`.
 
 ## Two properties this depends on
 

@@ -40,6 +40,22 @@ function createStore(cfg, fetchImpl) {
       return Array.isArray(cats) && cats.length ? cats : null;
     },
 
+    /* The keys the user entered in the app. Only the service role may call
+       this function, and the key is decrypted from the vault inside it — the
+       browser has no route to the value at all. */
+    async readBankCredentials() {
+      const rows = await request("/rpc/fin_bank_credentials", {
+        method: "POST",
+        body: JSON.stringify({ p_user_id: userId }),
+      });
+      const out = {};
+      for (const r of rows || []) {
+        if (!r.bank) continue;
+        out[r.bank] = { baseUrl: r.base_url || "", apiKey: r.api_key || "", accounts: r.accounts || "" };
+      }
+      return out;
+    },
+
     async readSyncState(bank) {
       const rows = await request(
         "/sync_state?user_id=eq." + enc(userId) + "&bank=eq." + enc(bank) + "&select=*&limit=1");

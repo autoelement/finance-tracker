@@ -33,6 +33,9 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
   }
   window.__TX=TX;
   var STATE={cats:null,imports:[]};
+  var CREDS=[];   // what bank_credentials would return: never the key itself
+  var VAULT={};   // what the browser must never be able to reach
+  window.__vault=VAULT;
   function summary(){var m={};TX.forEach(function(r){var k=r.txdate.slice(0,7)+"|"+r.category+"|"+r.ttype;
     if(!m[k])m[k]={mkey:r.txdate.slice(0,7),category:r.category,ttype:r.ttype,total:0,cnt:0,dmin:r.txdate,dmax:r.txdate};
     m[k].total+=r.amount;m[k].cnt++;});return Object.keys(m).map(function(k){return m[k];});}
@@ -57,7 +60,7 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
   Q.prototype.maybeSingle=function(){this._one=true;return this;};
   Q.prototype.single=function(){this._one=true;return this;};
   Q.prototype.rows=function(){
-    var src=this.t==="transactions"?TX:this.t==="fin_summary"?SUMMARY:[STATE],f=this.f;
+    var src=this.t==="transactions"?TX:this.t==="fin_summary"?SUMMARY:this.t==="bank_credentials"?CREDS:[STATE],f=this.f;
     return src.filter(function(r){return f.every(function(fl){
       var rv=r[fl[0]],op=fl[1],v=fl[2];
       if(op==="eq")return rv===v; if(op==="gt")return rv>v; if(op==="gte")return rv>=v;
@@ -89,6 +92,17 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
       if(n==="fin_kpi")return cb({data:kpi(a&&a.p_month),error:null});
       if(n==="fin_monthly"){var mk={};TX.forEach(function(r){mk[r.txdate.slice(0,7)]=1;});
         return cb({data:Object.keys(mk).sort().map(function(k){return {mkey:k};}),error:null});}
+      if(n==="fin_set_bank_credential"){
+        VAULT[a.p_bank]=a.p_api_key||VAULT[a.p_bank]||"";
+        var row=null;for(var i=0;i<CREDS.length;i++)if(CREDS[i].bank===a.p_bank)row=CREDS[i];
+        if(!row){row={bank:a.p_bank};CREDS.push(row);}
+        row.base_url=a.p_base_url;row.accounts=a.p_accounts;
+        row.updated_at=new Date().toISOString();row.has_secret=!!VAULT[a.p_bank];
+        return cb({data:null,error:null});}
+      if(n==="fin_clear_bank_credential"){
+        delete VAULT[a.p_bank];
+        CREDS=CREDS.filter(function(r){return r.bank!==a.p_bank;});
+        return cb({data:null,error:null});}
       if(n==="fin_by_category"){var m={};TX.forEach(function(r){
           if(a&&a.p_type&&r.ttype!==a.p_type)return;
           if(a&&a.p_month&&r.txdate.slice(0,7)!==a.p_month)return;
@@ -217,6 +231,65 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
   chk(imp.inSettings, "and lives in Settings instead");
   chk(!imp.dzClickable, "the empty state is no longer an upload target");
   chk(imp.fileInput, "the file input is still there for Settings to use");
+  await page.evaluate(() => showTab("dashboard"));
+  await page.waitForTimeout(200);
+
+  // ---- the bank credentials form ----
+  await page.evaluate(() => { BANK_CREDS = null; showTab("settings"); });
+  await page.waitForTimeout(600);
+  let cred = await page.evaluate(() => ({
+    cards: document.querySelectorAll("#bank-creds .cat-card").length,
+    keyType: (document.getElementById("cred-key-bog") || {}).type,
+    state: (document.getElementById("bank-creds") || {}).textContent.slice(0, 200),
+  }));
+  chk(cred.cards === 2, "a card per bank is rendered → " + cred.cards);
+  chk(cred.keyType === "password", "the key field is a password field → " + cred.keyType);
+  chk(/გასაღები არ არის/.test(cred.state), "it starts by saying no key is stored");
+
+  // saving a key
+  await page.evaluate(() => {
+    document.getElementById("cred-url-bog").value = "https://api.bog.ge";
+    document.getElementById("cred-acc-bog").value = "GE00BG0000000000000000:GEL";
+    document.getElementById("cred-key-bog").value = "super-secret-key-123";
+    saveBankCred("bog");
+  });
+  await page.waitForTimeout(800);
+  cred = await page.evaluate(() => ({
+    state: document.getElementById("bank-creds").textContent,
+    field: document.getElementById("cred-key-bog").value,
+    stored: Object.keys(window.__vault),
+    vaultValue: window.__vault.bog,
+    html: document.getElementById("bank-creds").innerHTML,
+    inMemory: JSON.stringify(window.BANK_CREDS || []),
+  }));
+  chk(/გასაღები დაყენებულია/.test(cred.state), "after saving it says a key is stored");
+  chk(cred.field === "", "and the field is cleared, not left holding the key");
+  chk(cred.vaultValue === "super-secret-key-123", "the key did reach the database");
+  chk(cred.html.indexOf("super-secret-key-123") === -1, "but it is nowhere in the rendered page");
+  chk(cred.inMemory.indexOf("super-secret-key-123") === -1, "and nowhere in what the page holds in memory");
+
+  // the url can be corrected without retyping the key
+  await page.evaluate(() => {
+    document.getElementById("cred-url-bog").value = "https://api.bog.ge/v2";
+    document.getElementById("cred-key-bog").value = "";
+    saveBankCred("bog");
+  });
+  await page.waitForTimeout(800);
+  cred = await page.evaluate(() => ({ vault: window.__vault.bog, state: document.getElementById("bank-creds").textContent }));
+  chk(cred.vault === "super-secret-key-123", "an empty key field leaves the stored key alone");
+  chk(/გასაღები დაყენებულია/.test(cred.state), "and it is still reported as set");
+
+  // a missing url is refused rather than stored half-formed
+  const before = await page.evaluate(() => JSON.stringify(window.__vault));
+  await page.evaluate(() => {
+    document.getElementById("cred-url-tbc").value = "";
+    document.getElementById("cred-key-tbc").value = "x";
+    saveBankCred("tbc");
+  });
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => JSON.stringify(window.__vault));
+  chk(before === after, "saving without a base url stores nothing");
+
   await page.evaluate(() => showTab("dashboard"));
   await page.waitForTimeout(200);
 
