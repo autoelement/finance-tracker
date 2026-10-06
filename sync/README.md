@@ -22,8 +22,19 @@ nothing else in the project needs to change.
 Needs Node 18 or newer. No dependencies to install.
 
 ```sh
-node sync/index.js
+node sync/index.js --check     # read-only: is the configuration right?
+node sync/index.js --dry-run   # a full run that stores nothing
+node sync/index.js             # fetch and store
 ```
+
+`--check` reaches no bank and writes nothing. It confirms the Supabase URL,
+key and user id work, reports which categories and bookmarks it found, and
+builds each bank's client without calling it — so a missing account list or a
+half-filled authentication shows up before a real run.
+
+`--dry-run` does the whole thing except the writing, and prints what it would
+have stored, broken down by category, so the figures can be checked against a
+statement before anything lands in the database.
 
 Everything comes from the environment. Nothing is read from a file in this
 repository, and no credential is ever printed.
