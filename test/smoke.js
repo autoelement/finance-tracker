@@ -203,6 +203,23 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
     await page.waitForTimeout(150);
   }
 
+  // the spreadsheet importer is out of the daily path but still reachable
+  const imp = await page.evaluate(() => {
+    const header = !!document.getElementById("btn-import");
+    showTab("settings");
+    const inSettings = [...document.querySelectorAll("#page-settings button")]
+      .some(b => /ატვირთვა/.test(b.textContent));
+    const dz = document.getElementById("dropzone");
+    return { header, inSettings, dzClickable: !!(dz && dz.getAttribute("onclick")),
+             fileInput: !!document.getElementById("file-input") };
+  });
+  chk(!imp.header, "the import button is gone from the header");
+  chk(imp.inSettings, "and lives in Settings instead");
+  chk(!imp.dzClickable, "the empty state is no longer an upload target");
+  chk(imp.fileInput, "the file input is still there for Settings to use");
+  await page.evaluate(() => showTab("dashboard"));
+  await page.waitForTimeout(200);
+
   chk(errors.length === 0, "no page errors or failed requests" + (errors.length ? " → " + errors.slice(0, 4).join(" | ") : ""));
 
   console.log(A.join("\n"));
