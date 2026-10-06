@@ -51,7 +51,15 @@ function createStore(cfg, fetchImpl) {
       const out = {};
       for (const r of rows || []) {
         if (!r.bank) continue;
-        out[r.bank] = { baseUrl: r.base_url || "", apiKey: r.api_key || "", accounts: r.accounts || "" };
+        out[r.bank] = {
+          baseUrl: r.base_url || "",
+          clientId: r.client_id || "",
+          clientSecret: r.client_secret || "",
+          tokenUrl: r.token_url || "",
+          scope: r.scope || "",
+          authMode: r.auth_mode || "oauth_basic",
+          accounts: r.accounts || "",
+        };
       }
       return out;
     },

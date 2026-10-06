@@ -44,22 +44,32 @@ function load() {
     banks: {
       bog: bank("BOG", {
         baseUrl: optional("BOG_BASE_URL", ""),
-        apiKey: optional("BOG_API_KEY", ""),
+        clientId: optional("BOG_CLIENT_ID", ""),
+        clientSecret: optional("BOG_CLIENT_SECRET", ""),
+        tokenUrl: optional("BOG_TOKEN_URL", ""),
+        scope: optional("BOG_SCOPE", ""),
+        authMode: optional("BOG_AUTH_MODE", "oauth_basic"),
         accounts: list(optional("BOG_ACCOUNTS", "")),   // IBAN:CURRENCY, comma separated
       }),
       tbc: bank("TBC", {
         baseUrl: optional("TBC_BASE_URL", ""),
-        apiKey: optional("TBC_API_KEY", ""),
+        clientId: optional("TBC_CLIENT_ID", ""),
+        clientSecret: optional("TBC_CLIENT_SECRET", ""),
+        tokenUrl: optional("TBC_TOKEN_URL", ""),
+        scope: optional("TBC_SCOPE", ""),
+        authMode: optional("TBC_AUTH_MODE", "oauth_basic"),
         accounts: list(optional("TBC_ACCOUNTS", "")),   // optional; blank means every account
       }),
     },
   };
 }
 
-/* A bank is enabled only once it has somewhere to call. Until the credentials
-   exist the run skips it rather than failing, so the other bank still syncs. */
+/* A bank is enabled only once it has everything it needs to call: somewhere to
+   go and a credential pair. Until then the run skips it rather than failing,
+   so one bank can go live while the other is still being arranged. */
 function bank(label, cfg) {
-  return Object.assign({ label: label, enabled: !!cfg.baseUrl }, cfg);
+  const complete = !!(cfg.baseUrl && cfg.clientId && cfg.clientSecret);
+  return Object.assign({ label: label, enabled: complete }, cfg);
 }
 
 /* Credentials entered in the app win over the environment. The environment
@@ -68,11 +78,17 @@ function bank(label, cfg) {
 function withStored(cfg, stored) {
   for (const id of Object.keys(cfg.banks)) {
     const s = stored && stored[id];
-    if (!s || !s.baseUrl || !s.apiKey) continue;
+    /* A partial entry is not a configuration. Ignoring it keeps a working
+       environment setup working rather than half-overwriting it. */
+    if (!s || !s.baseUrl || !s.clientId || !s.clientSecret) continue;
     const b = cfg.banks[id];
     cfg.banks[id] = Object.assign({}, b, {
       baseUrl: s.baseUrl,
-      apiKey: s.apiKey,
+      clientId: s.clientId,
+      clientSecret: s.clientSecret,
+      tokenUrl: s.tokenUrl || b.tokenUrl,
+      scope: s.scope || b.scope,
+      authMode: s.authMode || b.authMode || "oauth_basic",
       accounts: s.accounts ? list(s.accounts) : b.accounts,
       enabled: true,
       source: "app",

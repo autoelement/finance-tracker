@@ -3,7 +3,7 @@
   "private": true,
   "description": "Tests and the bank sync service. The web app itself is index.html and needs no build.",
   "scripts": {
-    "test": "node shared/test/categorize.test.js && node sync/test/normalize.test.js && node sync/test/run.test.js && node sync/test/config.test.js && node test/smoke.js"
+    "test": "node shared/test/categorize.test.js && node sync/test/normalize.test.js && node sync/test/run.test.js && node sync/test/auth.test.js && node sync/test/config.test.js && node test/smoke.js"
   },
   "devDependencies": {
     "playwright": "^1.47.0"

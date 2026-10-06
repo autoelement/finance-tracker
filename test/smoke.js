@@ -93,10 +93,11 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
       if(n==="fin_monthly"){var mk={};TX.forEach(function(r){mk[r.txdate.slice(0,7)]=1;});
         return cb({data:Object.keys(mk).sort().map(function(k){return {mkey:k};}),error:null});}
       if(n==="fin_set_bank_credential"){
-        VAULT[a.p_bank]=a.p_api_key||VAULT[a.p_bank]||"";
+        VAULT[a.p_bank]=a.p_client_secret||VAULT[a.p_bank]||"";
         var row=null;for(var i=0;i<CREDS.length;i++)if(CREDS[i].bank===a.p_bank)row=CREDS[i];
         if(!row){row={bank:a.p_bank};CREDS.push(row);}
-        row.base_url=a.p_base_url;row.accounts=a.p_accounts;
+        row.base_url=a.p_base_url;row.accounts=a.p_accounts;row.client_id=a.p_client_id;
+        row.token_url=a.p_token_url;row.scope=a.p_scope;row.auth_mode=a.p_auth_mode;
         row.updated_at=new Date().toISOString();row.has_secret=!!VAULT[a.p_bank];
         return cb({data:null,error:null});}
       if(n==="fin_clear_bank_credential"){
@@ -239,56 +240,84 @@ window.XLSX={read:function(){return {SheetNames:["S"],Sheets:{S:{}}};},utils:{sh
   await page.waitForTimeout(600);
   let cred = await page.evaluate(() => ({
     cards: document.querySelectorAll("#bank-creds .cat-card").length,
-    keyType: (document.getElementById("cred-key-bog") || {}).type,
+    keyType: (document.getElementById("cred-sec-bog") || {}).type,
     state: (document.getElementById("bank-creds") || {}).textContent.slice(0, 200),
   }));
   chk(cred.cards === 2, "a card per bank is rendered → " + cred.cards);
-  chk(cred.keyType === "password", "the key field is a password field → " + cred.keyType);
-  chk(/გასაღები არ არის/.test(cred.state), "it starts by saying no key is stored");
+  chk(cred.keyType === "password", "the secret field is a password field → " + cred.keyType);
+  chk(/Secret არ არის/.test(cred.state), "it starts by saying no secret is stored");
 
   // saving a key
   await page.evaluate(() => {
     document.getElementById("cred-url-bog").value = "https://api.bog.ge";
     document.getElementById("cred-acc-bog").value = "GE00BG0000000000000000:GEL";
-    document.getElementById("cred-key-bog").value = "super-secret-key-123";
+    document.getElementById("cred-cid-bog").value = "my-client-id";
+    document.getElementById("cred-turl-bog").value = "https://api.bog.ge/oauth2/token";
+    document.getElementById("cred-sec-bog").value = "super-secret-key-123";
     saveBankCred("bog");
   });
   await page.waitForTimeout(800);
   cred = await page.evaluate(() => ({
     state: document.getElementById("bank-creds").textContent,
-    field: document.getElementById("cred-key-bog").value,
+    field: document.getElementById("cred-sec-bog").value,
     stored: Object.keys(window.__vault),
     vaultValue: window.__vault.bog,
     html: document.getElementById("bank-creds").innerHTML,
     inMemory: JSON.stringify(window.BANK_CREDS || []),
   }));
-  chk(/გასაღები დაყენებულია/.test(cred.state), "after saving it says a key is stored");
-  chk(cred.field === "", "and the field is cleared, not left holding the key");
-  chk(cred.vaultValue === "super-secret-key-123", "the key did reach the database");
+  chk(/Secret დაყენებულია/.test(cred.state), "after saving it says a secret is stored");
+  chk(cred.field === "", "and the field is cleared, not left holding the secret");
+  chk(cred.vaultValue === "super-secret-key-123", "the secret did reach the database");
   chk(cred.html.indexOf("super-secret-key-123") === -1, "but it is nowhere in the rendered page");
   chk(cred.inMemory.indexOf("super-secret-key-123") === -1, "and nowhere in what the page holds in memory");
 
   // the url can be corrected without retyping the key
   await page.evaluate(() => {
     document.getElementById("cred-url-bog").value = "https://api.bog.ge/v2";
-    document.getElementById("cred-key-bog").value = "";
+    document.getElementById("cred-sec-bog").value = "";
     saveBankCred("bog");
   });
   await page.waitForTimeout(800);
   cred = await page.evaluate(() => ({ vault: window.__vault.bog, state: document.getElementById("bank-creds").textContent }));
-  chk(cred.vault === "super-secret-key-123", "an empty key field leaves the stored key alone");
-  chk(/გასაღები დაყენებულია/.test(cred.state), "and it is still reported as set");
+  chk(cred.vault === "super-secret-key-123", "an empty secret field leaves the stored secret alone");
+  chk(/Secret დაყენებულია/.test(cred.state), "and it is still reported as set");
 
   // a missing url is refused rather than stored half-formed
   const before = await page.evaluate(() => JSON.stringify(window.__vault));
   await page.evaluate(() => {
     document.getElementById("cred-url-tbc").value = "";
-    document.getElementById("cred-key-tbc").value = "x";
+    document.getElementById("cred-cid-tbc").value = "c";
+    document.getElementById("cred-sec-tbc").value = "x";
     saveBankCred("tbc");
   });
   await page.waitForTimeout(400);
   const after = await page.evaluate(() => JSON.stringify(window.__vault));
   chk(before === after, "saving without a base url stores nothing");
+
+  // OAuth needs a token endpoint, and the form must say so before saving
+  const before2 = await page.evaluate(() => JSON.stringify(window.__vault));
+  await page.evaluate(() => {
+    document.getElementById("cred-url-tbc").value = "https://tbc.example";
+    document.getElementById("cred-cid-tbc").value = "c";
+    document.getElementById("cred-sec-tbc").value = "x";
+    document.getElementById("cred-turl-tbc").value = "";
+    document.getElementById("cred-mode-tbc").value = "oauth_basic";
+    saveBankCred("tbc");
+  });
+  await page.waitForTimeout(400);
+  chk(before2 === await page.evaluate(() => JSON.stringify(window.__vault)),
+      "OAuth with no token endpoint is refused before anything is stored");
+
+  // header mode needs none, so the same entry saves
+  await page.evaluate(() => {
+    document.getElementById("cred-mode-tbc").value = "header";
+    saveBankCred("tbc");
+  });
+  await page.waitForTimeout(700);
+  const hdr = await page.evaluate(() => ({ vault: window.__vault.tbc,
+    mode: (window.BANK_CREDS.filter(c => c.bank === "tbc")[0] || {}).auth_mode }));
+  chk(hdr.vault === "x", "header mode saves without a token endpoint");
+  chk(hdr.mode === "header", "and the chosen mode is stored → " + hdr.mode);
 
   await page.evaluate(() => showTab("dashboard"));
   await page.waitForTimeout(200);

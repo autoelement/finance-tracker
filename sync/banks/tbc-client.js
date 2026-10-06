@@ -4,20 +4,17 @@
 
    Unlike BOG, the account filter is optional: with no account the endpoint
    returns the movements of every account the credentials can see, which is
-   what we want. Naming an account means also naming its currency.
-
-   ─────────────────────────────────────────────────────────────────────────
-   STILL TO FILL IN: authentication. Everything else is done.
-   See the same note in bog-client.js — put the scheme TBC gave you in
-   authHeaders() and nothing else in the project needs to change.
-   ───────────────────────────────────────────────────────────────────────── */
+   what we want. Naming an account means also naming its currency. */
 
 const tbc = require("./tbc");
+const { createAuthorizer } = require("./auth");
 
 function makeClients(bankCfg, fetchImpl) {
   const doFetch = fetchImpl || globalThis.fetch;
   const base = String(bankCfg.baseUrl || "").replace(/\/+$/, "");
   if (!base) return [];
+
+  const authorize = createAuthorizer(Object.assign({ label: "TBC" }, bankCfg), doFetch);
 
   /* With no account configured, one stream covering everything. */
   const accounts = bankCfg.accounts && bankCfg.accounts.length ? bankCfg.accounts : [null];
@@ -35,19 +32,11 @@ function makeClients(bankCfg, fetchImpl) {
         pageIndex: req.pageIndex,
       });
       const url = base + "/bab/v1/accounts/movements?" + new URLSearchParams(query).toString();
-      const res = await doFetch(url, { headers: authHeaders(bankCfg) });
-      if (!res.ok) {
-        throw new Error("TBC " + res.status + " on movements: " + (await res.text()).slice(0, 200));
-      }
+      const res = await doFetch(url, { headers: await authorize() });
+      if (!res.ok) throw new Error("TBC " + res.status + " on movements");
       return res.json();
     },
   }));
-}
-
-function authHeaders(cfg) {
-  // TODO: the scheme TBC gave you. See the note at the top of this file.
-  if (!cfg.apiKey) throw new Error("TBC authentication is not configured yet (sync/banks/tbc-client.js)");
-  return { Authorization: "Bearer " + cfg.apiKey, Accept: "application/json" };
 }
 
 module.exports = makeClients;

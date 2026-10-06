@@ -360,7 +360,7 @@ body:not(.authed) .tabs,body:not(.authed) .wrap,body:not(.authed) #btn-logout,bo
     <div id="perf-mode" class="cat-card" style="margin-bottom:16px"></div>
 
     <div class="section-title" style="margin-top:26px">ბანკების კავშირი</div>
-    <div class="hint" style="margin:-6px 0 12px">გასაღები დაშიფრულად ინახება და <b>უკან აღარ იკითხება</b> — ვერც შენ დაინახავ და ვერც სხვა. შეცვლა შეიძლება, ნახვა — არა. ჩაწერე მხოლოდ <b>წაკითხვის</b> უფლების გასაღები; გადახდის უფლების მქონე არასდროს.</div>
+    <div class="hint" style="margin:-6px 0 12px">Client Secret დაშიფრულად ინახება და <b>უკან აღარ იკითხება</b> — ვერც შენ დაინახავ და ვერც სხვა. შეცვლა შეიძლება, ნახვა — არა. ჩაწერე მხოლოდ <b>წაკითხვის</b> უფლების credentials; გადახდის უფლების მქონე არასდროს.</div>
     <div id="bank-creds"></div>
 
     <div class="section-title" style="margin-top:26px">ისტორიული მონაცემების შემოტანა</div>
@@ -1690,7 +1690,7 @@ function forceRebuild(){
    so the form shows whether one is stored and when, never the value. */
 var BANK_CREDS=null;
 function loadBankCreds(cb){
-  sb.from("bank_credentials").select("bank,base_url,accounts,updated_at,has_secret")
+  sb.from("bank_credentials").select("bank,base_url,accounts,client_id,token_url,scope,auth_mode,updated_at,has_secret")
     .eq("user_id",currentUser.id).then(function(res){
       BANK_CREDS=res.error?[]:(res.data||[]);
       if(cb)cb(res.error||null);
@@ -1705,45 +1705,64 @@ function renderBankCreds(){
   if(BANK_CREDS===null){el.innerHTML='<div class="hint">იტვირთება...</div>';return;}
   var banks=[["bog","🟠 საქართველოს ბანკი (BOG)","IBAN:GEL, IBAN:USD — სავალდებულო"],
              ["tbc","🔵 თიბისი ბანკი (TBC)","IBAN:GEL — ცარიელი ნიშნავს ყველა ანგარიშს"]];
+  var modes=[["oauth_basic","OAuth2 — Basic (ჩვეულებრივ ასეა)"],
+             ["oauth_body","OAuth2 — body-ში"],
+             ["header","პირდაპირ ჰედერებში (ტოკენის გარეშე)"]];
   var h="";
   banks.forEach(function(b){
     var id=b[0],c=credFor(id);
     var when=c&&c.updated_at?dateStr(new Date(c.updated_at)):"";
+    var mode=(c&&c.auth_mode)||"oauth_basic";
     var state=c&&c.has_secret
-      ? '<span class="pill in">გასაღები დაყენებულია'+(when?" · "+when:"")+'</span>'
-      : '<span class="pill out">გასაღები არ არის</span>';
+      ? '<span class="pill in">Secret დაყენებულია'+(when?" · "+when:"")+'</span>'
+      : '<span class="pill out">Secret არ არის</span>';
     h+='<div class="cat-card" style="margin-bottom:12px">'+
        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
        '<b>'+b[1]+'</b>'+state+'</div>'+
-       '<label class="hint">მისამართი (BASE_URL)</label>'+
-       '<input id="cred-url-'+id+'" type="text" placeholder="https://..." value="'+esc((c&&c.base_url)||"")+'" style="width:100%;margin:4px 0 10px">'+
-       '<label class="hint">ანგარიშები — '+esc(b[2])+'</label>'+
-       '<input id="cred-acc-'+id+'" type="text" placeholder="GE00XX0000000000000000:GEL" value="'+esc((c&&c.accounts)||"")+'" style="width:100%;margin:4px 0 10px">'+
-       '<label class="hint">API გასაღები'+(c&&c.has_secret?" — ცარიელი დატოვე, თუ შეცვლა არ გინდა":"")+'</label>'+
-       '<input id="cred-key-'+id+'" type="password" autocomplete="new-password" placeholder="'+(c&&c.has_secret?"•••••••• შენახულია":"ჩასვი გასაღები")+'" style="width:100%;margin:4px 0 12px">'+
+       fld("მისამართი (BASE_URL)","cred-url-"+id,"text","https://...",(c&&c.base_url)||"")+
+       fld("Client ID","cred-cid-"+id,"text","client id",(c&&c.client_id)||"")+
+       '<label class="hint">Client Secret'+(c&&c.has_secret?" — ცარიელი დატოვე, თუ შეცვლა არ გინდა":"")+'</label>'+
+       '<input id="cred-sec-'+id+'" type="password" autocomplete="new-password" placeholder="'+
+         (c&&c.has_secret?"•••••••• შენახულია":"ჩასვი client secret")+'" style="width:100%;margin:4px 0 10px">'+
+       '<label class="hint">ავთენტიფიკაციის ტიპი</label>'+
+       '<select id="cred-mode-'+id+'" style="width:100%;margin:4px 0 10px">'+
+         modes.map(function(m){return '<option value="'+m[0]+'"'+(mode===m[0]?" selected":"")+'>'+m[1]+'</option>';}).join("")+
+       '</select>'+
+       fld("ტოკენის მისამართი (OAuth2-ისთვის)","cred-turl-"+id,"text","https://.../oauth2/token",(c&&c.token_url)||"")+
+       fld("Scope — არასავალდებულო","cred-scope-"+id,"text","",(c&&c.scope)||"")+
+       fld("ანგარიშები — "+b[2],"cred-acc-"+id,"text","GE00XX0000000000000000:GEL",(c&&c.accounts)||"")+
        '<button class="btn" onclick="saveBankCred(\''+id+'\')">შენახვა</button>'+
        (c?'<button class="btn btn-danger" style="margin-left:8px" onclick="clearBankCred(\''+id+'\')">წაშლა</button>':'')+
        '</div>';
   });
   el.innerHTML=h;
 }
+function fld(label,id,type,ph,val){
+  return '<label class="hint">'+esc(label)+'</label>'+
+         '<input id="'+id+'" type="'+type+'" placeholder="'+esc(ph)+'" value="'+esc(val)+'" style="width:100%;margin:4px 0 10px">';
+}
 function saveBankCred(bank){
-  var url=(document.getElementById("cred-url-"+bank).value||"").trim();
-  var acc=(document.getElementById("cred-acc-"+bank).value||"").trim();
-  var keyEl=document.getElementById("cred-key-"+bank);
-  var key=keyEl.value||"";
+  function v(p){var e=document.getElementById(p+"-"+bank);return e?(e.value||"").trim():"";}
+  var url=v("cred-url"),cid=v("cred-cid"),acc=v("cred-acc"),turl=v("cred-turl"),scope=v("cred-scope");
+  var mode=v("cred-mode")||"oauth_basic";
+  var secEl=document.getElementById("cred-sec-"+bank), sec=secEl.value||"";
+  var existing=credFor(bank), hasSecret=!!(existing&&existing.has_secret);
+
   if(!url){toast("მისამართი (BASE_URL) სავალდებულოა","err");return;}
+  if(!cid){toast("Client ID სავალდებულოა","err");return;}
+  if(!sec&&!hasSecret){toast("Client Secret სავალდებულოა","err");return;}
+  if(mode!=="header"&&!turl){toast("OAuth2-ს ტოკენის მისამართი სჭირდება","err");return;}
   if(bank==="bog"&&!acc){toast("BOG-ს ანგარიში სჭირდება: IBAN:ვალუტა","err");return;}
-  var existing=credFor(bank);
-  if(!key&&!(existing&&existing.has_secret)){toast("გასაღები სავალდებულოა","err");return;}
-  sb.rpc("fin_set_bank_credential",{p_bank:bank,p_base_url:url,p_accounts:acc,p_api_key:key}).then(function(res){
-    keyEl.value="";   // never leave it sitting in the form
+
+  sb.rpc("fin_set_bank_credential",{p_bank:bank,p_base_url:url,p_accounts:acc,
+    p_client_id:cid,p_client_secret:sec,p_token_url:turl,p_scope:scope,p_auth_mode:mode}).then(function(res){
+    secEl.value="";   // never leave it sitting in the form
     if(res.error){toast("შენახვა ვერ მოხერხდა: "+res.error.message,"err");return;}
     loadBankCreds(function(){renderBankCreds();toast("შენახულია","ok");});
   });
 }
 function clearBankCred(bank){
-  if(!confirm("წავშალო ამ ბანკის კავშირი და გასაღები?"))return;
+  if(!confirm("წავშალო ამ ბანკის კავშირი და secret?"))return;
   sb.rpc("fin_clear_bank_credential",{p_bank:bank}).then(function(res){
     if(res.error){toast("წაშლა ვერ მოხერხდა: "+res.error.message,"err");return;}
     loadBankCreds(function(){renderBankCreds();toast("წაიშალა","ok");});
