@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="shared/categorize.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -461,7 +462,7 @@ var currentUser=null;
 var K_TX="fin_tx_v3", K_CATS="fin_cats_v1", K_IMP="fin_imports_v1";
 var CATS = [];          // [{name,type:'any'|'income'|'expense',keywords:[...]}]
 var imports = [];       // [{id,bank,file,ts,count}]
-var DEFAULT_CAT = "სხვა";
+var DEFAULT_CAT = FinCat.DEFAULT_CAT;
 var rawRows=[], headers=[], pendingBank="other";
 var sortKey="date", sortDir=-1, periodFilter="", curTab="dashboard";
 var tablePage=0, PAGE_SIZE=500;
@@ -473,51 +474,19 @@ function saveSettings(){try{localStorage.setItem(settingsKey(),JSON.stringify(SE
 function bankFmt(bankId){return (SETTINGS.bankFmt&&SETTINGS.bankFmt[bankId])||"auto";}
 var charts={};
 
-/* default categories (order = matching priority, top wins) */
-function defaultCats(){
-  return [
-    {name:"მძღოლებზე გაცემული",type:"expense",keywords:["გამომუშავებ"]},
-    {name:"ბანკის საკომისიო",type:"expense",keywords:["საკომისიო","commission","მომსახურების საფასურ"]},
-    {name:"იანდექსი",type:"expense",keywords:["yandex","იანდექს"]},
-    {name:"კომუნალური მომსახურება",type:"expense",keywords:["დენ","ელექტრო","წყალ","გაზი","ინტერნეტ","კომუნალ","magti","silknet"]},
-    {name:"პროგრამული უზრუნველყოფა",type:"expense",keywords:["software","subscription","google","microsoft","პროგრამ"]},
-    {name:"მარკეტინგი",type:"expense",keywords:["რეკლამ","marketing","facebook","meta","google ads","მარკეტ"]},
-    {name:"საბიუჯეტო გადასახადი",type:"expense",keywords:["ბიუჯეტ","საშემოსავლო","დღგ","ხაზინა","საგადასახადო"]},
-    {name:"ონლაინ გადასახადები",type:"expense",keywords:[]},
-    {name:"აღჭურვილობა",type:"expense",keywords:[]},
-    {name:"ინვენტარი",type:"expense",keywords:[]},
-    {name:"თანამშრომელთა ხელფასები",type:"expense",keywords:["ხელფას","ანაზღაურება თანამშრ"]},
-    {name:"საოპერაციო ხარჯები",type:"expense",keywords:[]},
-    {name:"მოგების განაწილება",type:"expense",keywords:["მოგების განაწ","დივიდენდ"]},
-    {name:"კომპენსაცია პარკებს (ბონუსები)",type:"expense",keywords:["კომპენსაცია","ბონუს"]},
-    {name:"საკომისიო პარკებიდან",type:"income",keywords:[]},
-    {name:"ახალი მძღოლების საკომისიო პარკებიდან",type:"income",keywords:[]},
-    {name:"პრო პაკეტის შემოსავალი",type:"income",keywords:["პრო პაკეტ"]},
-    {name:"ბალანსის შევსება",type:"any",keywords:["ბალანსის შევსება","შევსება"]},
-    {name:"სხვა",type:"any",keywords:[]}
-  ];
-}
+/* default categories live in shared/categorize.js (order = matching priority) */
+function defaultCats(){return FinCat.defaultCats();}
 
 /* ============ CATEGORIZATION ENGINE ============ */
-function norm(s){return (""+s).toLowerCase().replace(/\s+/g," ").trim();}
+/* The rules themselves live in shared/categorize.js, which the sync service
+   requires as well — one engine, so a transaction categorises the same however
+   it arrived. These are the names the rest of the page already calls. */
+function norm(s){return FinCat.norm(s);}
 var _RULES=null; // compiled rules cache
-function compileRules(){_RULES=CATS.map(function(c){return {name:c.name,type:c.type,kws:c.keywords.map(function(k){return norm(k);}).filter(Boolean),ex:(c.exclude||[]).map(function(k){return norm(k);}).filter(Boolean)};});}
+function compileRules(){_RULES=FinCat.compile(CATS);}
 function rulesChanged(){_RULES=null;}
-function categorizeFast(low,type){ // low = already normalized text
-  var R=_RULES;
-  for(var i=0;i<R.length;i++){
-    var c=R[i];if(c.type!=="any"&&c.type!==type)continue;
-    var hit=false,ks=c.kws,j;
-    for(j=0;j<ks.length;j++){if(low.indexOf(ks[j])>-1){hit=true;break;}}
-    if(!hit)continue;
-    var bad=false,ex=c.ex;
-    for(j=0;j<ex.length;j++){if(low.indexOf(ex[j])>-1){bad=true;break;}}
-    if(bad)continue; // has an excluded word → skip this category
-    return c.name;
-  }
-  return DEFAULT_CAT;
-}
-function categorize(text, type){ if(!_RULES)compileRules(); return categorizeFast(norm(text),type); }
+function categorizeFast(low,type){return FinCat.match(_RULES,low,type);} // low = already normalized
+function categorize(text,type){ if(!_RULES)compileRules(); return categorizeFast(norm(text),type); }
 function catNames(){return CATS.map(function(c){return c.name;});}
 function catType(name){for(var i=0;i<CATS.length;i++)if(CATS[i].name===name)return CATS[i].type;return "any";}
 
