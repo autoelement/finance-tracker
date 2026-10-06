@@ -1,0 +1,72 @@
+"use strict";
+/* Everything the service needs to run, read from the environment. Nothing is
+   read from a file in the repository and nothing is ever logged: these are the
+   credentials that, if they leak, give someone your bank statements.
+
+   Set them wherever the service runs — systemd EnvironmentFile, Docker
+   --env-file, or a .env this repository ignores. See sync/README.md. */
+
+function required(name) {
+  const v = process.env[name];
+  if (!v) throw new Error("missing environment variable: " + name);
+  return v;
+}
+
+function optional(name, fallback) {
+  const v = process.env[name];
+  return v === undefined || v === "" ? fallback : v;
+}
+
+function intOpt(name, fallback) {
+  const n = parseInt(optional(name, ""), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function load() {
+  return {
+    supabase: {
+      url: required("SUPABASE_URL").replace(/\/+$/, ""),
+      /* The service role key bypasses row-level security, which is why this
+         service must never run anywhere a browser can reach it. Every query
+         below therefore filters by user_id itself. */
+      serviceKey: required("SUPABASE_SERVICE_KEY"),
+      userId: required("FINANCE_USER_ID"),
+    },
+
+    /* A transaction can appear in a statement days after its value date, and a
+       TBC movement only shows up once it is authorised. So each run re-reads a
+       window before the bookmark; the dedup key makes that free. */
+    overlapDays: intOpt("SYNC_OVERLAP_DAYS", 7),
+
+    /* How far back the very first run reaches when there is no bookmark yet. */
+    backfillDays: intOpt("SYNC_BACKFILL_DAYS", 90),
+
+    banks: {
+      bog: bank("BOG", {
+        baseUrl: optional("BOG_BASE_URL", ""),
+        apiKey: optional("BOG_API_KEY", ""),
+        accounts: list(optional("BOG_ACCOUNTS", "")),   // IBAN:CURRENCY, comma separated
+      }),
+      tbc: bank("TBC", {
+        baseUrl: optional("TBC_BASE_URL", ""),
+        apiKey: optional("TBC_API_KEY", ""),
+        accounts: list(optional("TBC_ACCOUNTS", "")),   // optional; blank means every account
+      }),
+    },
+  };
+}
+
+/* A bank is enabled only once it has somewhere to call. Until the credentials
+   exist the run skips it rather than failing, so the other bank still syncs. */
+function bank(label, cfg) {
+  return Object.assign({ label: label, enabled: !!cfg.baseUrl }, cfg);
+}
+
+function list(s) {
+  return String(s).split(",").map(x => x.trim()).filter(Boolean).map(entry => {
+    const [account, currency] = entry.split(":");
+    return { account: (account || "").trim(), currency: (currency || "GEL").trim() };
+  });
+}
+
+module.exports = { load, required, optional, intOpt };
